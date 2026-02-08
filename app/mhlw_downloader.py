@@ -151,9 +151,13 @@ class MHLWDownloader:
             pass
         return "不明"
 
-    def check_and_update(self) -> Dict[str, Any]:
+    def check_and_update(self, force: bool = False) -> Dict[str, Any]:
         """
         Check for updates and download if necessary.
+
+        Args:
+            force: If True, always download the latest data, ignoring cache.
+
         Returns a dict with status and metadata.
         """
         result = {
@@ -196,7 +200,8 @@ class MHLWDownloader:
 
         # Check if cache needs update
         cache_needs_update = (
-            not MHLW_EXCEL_PATH.exists()
+            force  # Always update if forced
+            or not MHLW_EXCEL_PATH.exists()
             or self.meta.get("etag") != remote_meta["etag"]
             or self.meta.get("last_modified") != remote_meta["last_modified"]
         )

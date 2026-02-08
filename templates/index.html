@@ -35,7 +35,7 @@
             <div class="d-flex justify-content-between align-items-center">
                 <h1 class="h3 mb-0">薬局向け医薬品供給状況チェッカー</h1>
                 <div class="d-flex gap-2 align-items-center">
-                    <small class="text-muted" id="last-updated">{% if status.downloaded_at %}最終更新: {{ status.downloaded_at }}{% else %}未更新{% endif %}</small>
+                    <small class="text-muted" id="last-updated">{% if status.last_checked %}最終更新: {{ status.last_checked.split('T')[0] }}{% else %}未更新{% endif %}</small>
                     <button class="btn btn-sm btn-outline-secondary" onclick="refreshData()" title="厚生労働省の最新の医薬品供給情報をダウンロードして更新">
                         🔄 厚労省データを更新
                     </button>
@@ -198,24 +198,57 @@
             let html = '<div class="table-responsive"><table class="table table-sm table-hover">';
             html += '<thead class="table-light"><tr>';
             html += '<th>薬品コード</th>';
-            html += '<th>成分名</th>';
+            html += '<th>医薬品名</th>';
             html += '<th style="min-width: 150px;">規格</th>';
             html += '<th>メーカー</th>';
-            html += '<th>供給状況</th>';
+            html += '<th>出荷対応</th>';
+            html += '<th>出荷量</th>';
             html += '<th>更新日</th>';
             html += '</tr></thead><tbody>';
 
             data.forEach((row, idx) => {
                 console.log("Row " + idx + ":", Object.keys(row));
 
-                const code = (row.pharmacy_薬品コード || '').toString();
+                // Find the drug code column
+                // Priority: mhlw_⑤YJコード > pharmacy_薬品コード
+                let code = '';
 
-                // Find the ingredient name column (③成分名)
-                let ingredient = '';
+                // First, try to find mhlw code
                 for (const key in row) {
-                    if (key.includes('成分名')) {
-                        ingredient = (row[key] || '').toString();
-                        break;
+                    if (key.startsWith('mhlw_') && (key.includes('コード') || key.includes('YJコード'))) {
+                        const value = (row[key] || '').toString().trim();
+                        if (value) {
+                            code = value;
+                            break;
+                        }
+                    }
+                }
+
+                // If not found, try pharmacy code
+                if (!code) {
+                    code = (row.pharmacy_薬品コード || '').toString().trim();
+                }
+
+                // Find the drug name column (⑥品名)
+                // Priority: mhlw_⑥品名 > pharmacy_薬品名
+                let drugName = '';
+
+                // First, try to find mhlw brand name
+                for (const key in row) {
+                    if (key.startsWith('mhlw_') && key.includes('品名') && !key.includes('成分名')) {
+                        const value = (row[key] || '').toString().trim();
+                        if (value) {
+                            drugName = value;
+                            break;
+                        }
+                    }
+                }
+
+                // If not found, try pharmacy brand name
+                if (!drugName) {
+                    const pharmName = (row.pharmacy_薬品名 || '').toString().trim();
+                    if (pharmName) {
+                        drugName = pharmName;
                     }
                 }
 
@@ -237,29 +270,78 @@
                     }
                 }
 
-                // Find the supply status column (look for 供給状況 or 出荷対応)
-                let status = '';
+                // Find the shipment status column (⑫出荷対応)
+                let shipmentStatus = '';
                 for (const key in row) {
-                    if (key.includes('供給状況') || key.includes('出荷対応')) {
-                        status = (row[key] || '').toString();
-                        break;
+                    if (key.includes('⑫') || (key.includes('出荷対応') && !key.includes('出荷量'))) {
+                        const value = (row[key] || '').toString().trim();
+                        if (value) {
+                            shipmentStatus = value;
+                            break;
+                        }
                     }
                 }
 
-                let date = '';
+                // Find the shipment volume column (⑰出荷量)
+                let shipmentVolume = '';
                 for (const key in row) {
-                    if (key.includes('更新') && key.includes('日')) {
-                        date = (row[key] || '').toString();
-                        break;
+                    if (key.includes('⑰') || (key.includes('出荷量') && key.includes('現在の状況'))) {
+                        const value = (row[key] || '').toString().trim();
+                        if (value) {
+                            shipmentVolume = value;
+                            break;
+                        }
+                    }
+                }
+
+                // Find the update date column (⑳当該品目の⑫以外の情報を更新した日)
+                // Priority: mhlw_⑳ (other information) > mhlw_⑬ (shipment info) > others
+                let date = '';
+
+                // First, try to find mhlw_⑳ (⑫以外の情報を更新した日)
+                for (const key in row) {
+                    if (key.startsWith('mhlw_') && key.includes('⑫以外')) {
+                        const value = (row[key] || '').toString().trim();
+                        if (value) {
+                            date = value;
+                            break;
+                        }
+                    }
+                }
+
+                // If not found, try mhlw_⑬ (⑫の情報を更新した日)
+                if (!date) {
+                    for (const key in row) {
+                        if (key.startsWith('mhlw_') && key.includes('⑫の情報') && key.includes('更新')) {
+                            const value = (row[key] || '').toString().trim();
+                            if (value) {
+                                date = value;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // If not found, try any mhlw key with 更新日
+                if (!date) {
+                    for (const key in row) {
+                        if (key.startsWith('mhlw_') && key.includes('更新') && key.includes('日')) {
+                            const value = (row[key] || '').toString().trim();
+                            if (value) {
+                                date = value;
+                                break;
+                            }
+                        }
                     }
                 }
 
                 html += '<tr>';
                 html += '<td><code>' + code + '</code></td>';
-                html += '<td>' + ingredient + '</td>';
+                html += '<td>' + drugName + '</td>';
                 html += '<td style="white-space: pre-wrap;">' + spec + '</td>';
                 html += '<td>' + maker + '</td>';
-                html += '<td>' + status + '</td>';
+                html += '<td>' + shipmentStatus + '</td>';
+                html += '<td>' + shipmentVolume + '</td>';
                 html += '<td><strong>' + date + '</strong></td>';
                 html += '</tr>';
             });

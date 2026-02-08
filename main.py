@@ -45,7 +45,7 @@ def is_authenticated(request: Request) -> bool:
 @app.on_event("startup")
 async def startup_event():
     """Initialize supply data on startup."""
-    result = downloader.check_and_update()
+    result = downloader.check_and_update(force=True)
     print(f"起動時チェック: {result['message']}")
 
 
@@ -143,6 +143,15 @@ async def check(request: Request, file: UploadFile = File(...)):
         # Read uploaded file
         content = await file.read()
         pharmacy_df = pd.read_excel(io.BytesIO(content), sheet_name=0)
+
+        # Debug: Log uploaded file info
+        print(f"📤 アップロードされたファイル: {file.filename}")
+        print(f"   行数: {len(pharmacy_df)}")
+        print(f"   最初の3行:")
+        for idx, row in pharmacy_df.head(3).iterrows():
+            code = row.get('コード', '')
+            name = row.get('薬品名', '')
+            print(f"     【{idx}】Code: {code}, Name: {name}")
 
         # Match and filter
         matcher = ExcelMatcher()
