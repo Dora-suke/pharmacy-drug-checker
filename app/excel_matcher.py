@@ -174,11 +174,13 @@ class ExcelMatcher:
             if not mhlw_matches:
                 continue
 
-            # Skip if pharmacy code already matched
+            # Skip if pharmacy code already matched (only if code exists)
             pharmacy_code = self._safe_str(pharmacy_row.get(pharmacy_code_column, ""))
-            if pharmacy_code in matched_pharmacy_codes:
+            if pharmacy_code and pharmacy_code in matched_pharmacy_codes:
                 continue
-            matched_pharmacy_codes.add(pharmacy_code)
+            # Only add to matched if code exists
+            if pharmacy_code:
+                matched_pharmacy_codes.add(pharmacy_code)
 
             result["stats"]["matched_rows"] += 1
 
