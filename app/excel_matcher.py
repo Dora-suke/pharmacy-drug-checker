@@ -25,16 +25,47 @@ def normalize_text(text: str) -> str:
 
 
 def find_column(df: pd.DataFrame, patterns: List[str]) -> Optional[str]:
-    """Find column name matching any of the patterns."""
+    """Find column name matching any of the patterns.
+
+    Search order:
+    1. Exact match (highest priority)
+    2. Pattern contained in column name (case-insensitive)
+    3. Normalized text matching
+    4. Fallback: semantic matching for common names (コード, 名, etc.)
+    """
+    # 1. Exact match
     for col in df.columns:
         for pattern in patterns:
-            if pattern in col:
+            if col == pattern:
                 return col
-        # Also try normalized matching
+
+    # 2. Pattern contained in column name (case-insensitive)
+    for col in df.columns:
+        col_lower = col.lower()
+        for pattern in patterns:
+            if pattern.lower() in col_lower:
+                return col
+
+    # 3. Normalized text matching
+    for col in df.columns:
         col_normalized = normalize_text(col)
         for pattern in patterns:
             if normalize_text(pattern) in col_normalized:
                 return col
+
+    # 4. Fallback: semantic matching for common Japanese names
+    # Check if looking for code-related column
+    if any('code' in p.lower() or 'コード' in p for p in patterns):
+        for col in df.columns:
+            if 'コード' in col or 'code' in col.lower():
+                return col
+
+    # Check if looking for name-related column
+    if any('name' in p.lower() or '名' in p for p in patterns):
+        for col in df.columns:
+            if '名' in col or 'name' in col.lower():
+                return col
+
     return None
 
 
@@ -137,7 +168,12 @@ class ExcelMatcher:
             mhlw_matches = []
 
             if pharmacy_code_column:
-                code = normalize_text(str(pharmacy_row.get(pharmacy_code_column, "")))
+                raw_code = pharmacy_row.get(pharmacy_code_column, "")
+                # Skip if code is NaN/None
+                if pd.notna(raw_code):
+                    code = normalize_text(str(raw_code))
+                else:
+                    code = ""
                 if code and len(code) > 0:
                     if self.drug_code_column:
                         matches = self.mhlw_df[
@@ -150,7 +186,12 @@ class ExcelMatcher:
 
             # Fallback to drug name matching
             if not mhlw_matches and pharmacy_name_column:
-                name = normalize_text(str(pharmacy_row.get(pharmacy_name_column, "")))
+                raw_name = pharmacy_row.get(pharmacy_name_column, "")
+                # Skip if name is NaN/None
+                if pd.notna(raw_name):
+                    name = normalize_text(str(raw_name))
+                else:
+                    name = ""
                 if name and len(name) > 0:
                     if self.drug_name_column:
                         # Try exact match first, then partial match
@@ -190,10 +231,9 @@ class ExcelMatcher:
                 for mhlw_match_tuple in mhlw_matches:
                     mhlw_match = pd.Series(dict(zip(self.mhlw_df.columns, mhlw_match_tuple)))
                     update_date = mhlw_match.get(self.update_date_column)
-                    if pd.notna(update_date):
-                        if update_date >= cutoff_date:
-                            has_recent = True
-                            break
+                    if pd.notna(update_date) and update_date >= cutoff_date:
+                        has_recent = True
+                        break
             else:
                 has_recent = True
 
