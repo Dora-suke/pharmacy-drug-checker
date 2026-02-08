@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: pharmacy-drug-checker
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: APP_PIN
+        sync: false  # Set manually in Render dashboard
+      - key: SESSION_SECRET_KEY
+        generateValue: true  # Auto-generate secure random value

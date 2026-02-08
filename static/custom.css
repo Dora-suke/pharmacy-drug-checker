@@ -1,0 +1,139 @@
+/* Custom styles for Pharmacy Drug Checker */
+
+body {
+    background-color: #f8f9fa;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "HiraginoSans-W3", sans-serif;
+}
+
+.container-fluid {
+    background-color: #ffffff;
+}
+
+/* Table styling */
+.table-responsive {
+    height: 100%;
+    overflow-y: auto;
+}
+
+.table {
+    margin-bottom: 0;
+    font-size: 0.9rem;
+}
+
+.table thead {
+    background-color: #f8f9fa;
+    border-top: 1px solid #dee2e6;
+}
+
+.table th {
+    font-weight: 600;
+    padding: 0.75rem;
+    white-space: nowrap;
+}
+
+.table td {
+    padding: 0.75rem;
+    vertical-align: middle;
+}
+
+.table tbody tr:hover {
+    background-color: #f0f0f0;
+}
+
+code {
+    background-color: #f8f9fa;
+    padding: 0.25rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.9em;
+    color: #d63384;
+}
+
+/* Card styling */
+.card {
+    border: 1px solid #dee2e6;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.card-header {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+    padding: 1rem;
+}
+
+/* Button styling */
+.btn-primary {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+}
+
+.btn-primary:hover {
+    background-color: #0b5ed7;
+    border-color: #0a58ca;
+}
+
+/* Alert styling */
+.alert {
+    border: none;
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0;
+}
+
+.alert-info {
+    background-color: #e7f3ff;
+    color: #004085;
+}
+
+.alert-success {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.alert-danger {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+.alert-warning {
+    background-color: #fff3cd;
+    color: #856404;
+}
+
+/* Buttons in input groups */
+.input-group .form-control {
+    border-color: #dee2e6;
+}
+
+.input-group .btn {
+    margin-left: 0.25rem;
+}
+
+/* Text utilities */
+.text-muted {
+    color: #6c757d !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .h1, .h2, .h3 {
+        font-size: 1.5rem;
+    }
+
+    .table {
+        font-size: 0.85rem;
+    }
+
+    .table th, .table td {
+        padding: 0.5rem;
+    }
+}
+
+/* Smooth transitions */
+* {
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}

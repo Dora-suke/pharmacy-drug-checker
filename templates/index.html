@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>薬局向け医薬品供給状況チェッカー</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        html, body { height: 100%; margin: 0; padding: 0; }
+        body { display: flex; flex-direction: column; }
+        .main-container { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .results-area { flex: 1; overflow-y: auto; }
+        /* タブコンテンツの flex 設定 */
+        .tab-content { display: flex !important; flex-direction: column; height: 100%; width: 100%; }
+        /* アクティブなタブペインは flex レイアウトを保持 */
+        .tab-pane {
+            overflow: visible;
+            height: 100% !important;
+            width: 100% !important;
+            display: none !important;
+            flex-direction: column;
+        }
+        .tab-pane.active {
+            display: flex !important;
+            flex-direction: column;
+            height: 100% !important;
+            width: 100% !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container p-3">
+        <!-- ヘッダー -->
+        <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center">
+                <h1 class="h3 mb-0">薬局向け医薬品供給状況チェッカー</h1>
+                <div class="d-flex gap-2 align-items-center">
+                    <small class="text-muted" id="last-updated">{% if status.downloaded_at %}最終更新: {{ status.downloaded_at }}{% else %}未更新{% endif %}</small>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="refreshData()" title="厚生労働省の最新の医薬品供給情報をダウンロードして更新">
+                        🔄 厚労省データを更新
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ステータス表示 -->
+        <div id="status-area" style="display: none;">
+            <div class="alert mb-3" id="status-msg"></div>
+        </div>
+
+        <!-- タブUI -->
+        <div class="card flex-grow-1" style="overflow: hidden; display: flex; flex-direction: column;">
+            <!-- タブナビゲーション -->
+            <div class="card-header" style="padding: 0;">
+                <ul class="nav nav-tabs" role="tablist" style="border-bottom: none; margin-bottom: 0;">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="tab-check" data-bs-toggle="tab" data-bs-target="#content-check" type="button" role="tab">
+                            📋 ファイル照合
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="tab-preview" data-bs-toggle="tab" data-bs-target="#content-preview" type="button" role="tab">
+                            📄 供給情報プレビュー
+                        </button>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- タブコンテンツ -->
+            <div class="tab-content flex-grow-1" style="overflow: hidden;">
+                <!-- ファイル照合タブ -->
+                <div class="tab-pane fade show active" id="content-check" role="tabpanel" style="overflow: hidden; padding: 0; margin: 0;">
+                    <div class="card-body" style="display: flex; flex-direction: column; overflow: hidden; padding: 0; margin: 0; min-height: 0;">
+                        <!-- ファイル選択 -->
+                        <div style="padding: 0.5rem; flex: 0 0 auto; margin: 0;">
+                            <div class="input-group" style="width: 100%; display: flex;">
+                                <input type="file" class="form-control" id="file-input" accept=".xlsx,.xls" style="flex: 1; min-width: 0;">
+                                <button class="btn btn-primary" type="button" onclick="checkFile()" style="flex: 0 0 auto;">照合実行</button>
+                            </div>
+                            <small class="text-muted d-block" style="margin-top: 0.25rem;">薬局のExcelファイルを選択してください</small>
+                        </div>
+                        <!-- 結果表示 -->
+                        <div class="results-area flex-grow-1" style="overflow-y: auto; padding: 0.5rem; margin: 0.5rem;">
+                            <div id="results-container">
+                                <p class="text-muted">ファイルを選択して「照合実行」をクリックしてください</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 供給情報プレビュータブ -->
+                <div class="tab-pane fade" id="content-preview" role="tabpanel" style="overflow: hidden; padding: 0; margin: 0;">
+                    <div id="preview-container" class="flex-grow-1" style="display: flex; flex-direction: column; padding: 0; margin: 0; min-height: 0;">
+                        <p class="text-muted">このタブを開いて供給情報を読み込みます</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        console.log("index.html loaded");
+
+        // キャッシュ用グローバル変数
+        let supplyDataCache = null;
+        let supplyDataLoaded = false;
+
+        function showStatus(msg, type) {
+            console.log("showStatus:", msg, type);
+            const statusArea = document.getElementById('status-area');
+            const statusMsg = document.getElementById('status-msg');
+            statusMsg.className = 'alert alert-' + type + ' mb-3';
+            statusMsg.textContent = msg;
+            statusArea.style.display = 'block';
+        }
+
+        function checkFile() {
+            console.log("checkFile called");
+            const file = document.getElementById('file-input').files[0];
+
+            if (!file) {
+                alert('ファイルを選択してください');
+                return;
+            }
+
+            console.log("File selected:", file.name);
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            console.log("Sending POST /check");
+
+            fetch('/check', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                console.log("Response status:", response.status);
+                return response.json();
+            })
+            .then(data => {
+                console.log("Response data:", data);
+
+                if (!data.success) {
+                    showStatus('エラー: ' + data.message, 'danger');
+                    return;
+                }
+
+                showStatus('マッチ: ' + data.stats.matched_rows + '件 / 10日以内: ' + data.stats.recent_updates + '件', 'success');
+                displayResults(data.data);
+            })
+            .catch(error => {
+                console.error("Fetch error:", error);
+                showStatus('エラー: ' + error.message, 'danger');
+            });
+        }
+
+        function displayResults(data) {
+            console.log("displayResults:", data.length, "rows");
+
+            const container = document.getElementById('results-container');
+
+            if (!data || data.length === 0) {
+                container.innerHTML = '<p class="text-warning">該当する医薬品がありません</p>';
+                return;
+            }
+
+            // Sort data: by date (newest first), then by drug name (alphabetically)
+            data.sort((a, b) => {
+                // Find date column dynamically
+                let dateA = '';
+                let dateB = '';
+                for (const key in a) {
+                    if (key.includes('更新') && key.includes('日')) {
+                        dateA = a[key] || '';
+                        break;
+                    }
+                }
+                for (const key in b) {
+                    if (key.includes('更新') && key.includes('日')) {
+                        dateB = b[key] || '';
+                        break;
+                    }
+                }
+
+                // Sort by date (newest first)
+                if (dateB !== dateA) {
+                    return dateB.localeCompare(dateA);
+                }
+
+                // If same date, sort by drug name (alphabetically)
+                const nameA = (a.pharmacy_薬品名 || '').toString();
+                const nameB = (b.pharmacy_薬品名 || '').toString();
+                return nameA.localeCompare(nameB, 'ja');
+            });
+
+            let html = '<div class="table-responsive"><table class="table table-sm table-hover">';
+            html += '<thead class="table-light"><tr>';
+            html += '<th>薬品コード</th>';
+            html += '<th>成分名</th>';
+            html += '<th style="min-width: 150px;">規格</th>';
+            html += '<th>メーカー</th>';
+            html += '<th>供給状況</th>';
+            html += '<th>更新日</th>';
+            html += '</tr></thead><tbody>';
+
+            data.forEach((row, idx) => {
+                console.log("Row " + idx + ":", Object.keys(row));
+
+                const code = (row.pharmacy_薬品コード || '').toString();
+
+                // Find the ingredient name column (③成分名)
+                let ingredient = '';
+                for (const key in row) {
+                    if (key.includes('成分名')) {
+                        ingredient = (row[key] || '').toString();
+                        break;
+                    }
+                }
+
+                // Find the specification column (④規格単位)
+                let spec = '';
+                for (const key in row) {
+                    if (key.includes('規格')) {
+                        spec = (row[key] || '').toString().replace(/\n/g, '<br>');
+                        break;
+                    }
+                }
+
+                // Find the manufacturer column (⑦製造販売業者名)
+                let maker = '';
+                for (const key in row) {
+                    if (key.includes('製造販売業者')) {
+                        maker = (row[key] || '').toString();
+                        break;
+                    }
+                }
+
+                // Find the supply status column (look for 供給状況 or 出荷対応)
+                let status = '';
+                for (const key in row) {
+                    if (key.includes('供給状況') || key.includes('出荷対応')) {
+                        status = (row[key] || '').toString();
+                        break;
+                    }
+                }
+
+                let date = '';
+                for (const key in row) {
+                    if (key.includes('更新') && key.includes('日')) {
+                        date = (row[key] || '').toString();
+                        break;
+                    }
+                }
+
+                html += '<tr>';
+                html += '<td><code>' + code + '</code></td>';
+                html += '<td>' + ingredient + '</td>';
+                html += '<td style="white-space: pre-wrap;">' + spec + '</td>';
+                html += '<td>' + maker + '</td>';
+                html += '<td>' + status + '</td>';
+                html += '<td><strong>' + date + '</strong></td>';
+                html += '</tr>';
+            });
+
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+            console.log("Results displayed");
+        }
+
+        function refreshData() {
+            console.log("refreshData called");
+
+            fetch('/refresh', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    console.log("Refresh response:", data);
+                    showStatus(data.message, data.success ? 'success' : 'warning');
+
+                    // Update last-updated display
+                    if (data.last_checked) {
+                        document.getElementById('last-updated').textContent = '最終更新: ' + data.last_checked;
+                    }
+                })
+                .catch(error => {
+                    console.error("Error:", error);
+                    showStatus('エラー: ' + error.message, 'danger');
+                });
+        }
+
+        function previewMHLW() {
+            console.log("previewMHLW called");
+
+            // キャッシュがあればキャッシュを使用
+            if (supplyDataCache) {
+                console.log("Using cached supply data");
+                displayPreview(supplyDataCache);
+                return;
+            }
+
+            fetch('/preview-supply')
+                .then(response => response.json())
+                .then(data => {
+                    console.log("Preview response:", data);
+
+                    if (!data.success) {
+                        showStatus('エラー: ' + data.message, 'danger');
+                        return;
+                    }
+
+                    displayPreview(data);
+                    // タブを自動的に切り替える
+                    const previewTab = new bootstrap.Tab(document.getElementById('tab-preview'));
+                    previewTab.show();
+                })
+                .catch(error => {
+                    console.error("Error:", error);
+                    showStatus('エラー: ' + error.message, 'danger');
+                });
+        }
+
+        function displayPreview(data) {
+            console.log("displayPreview:", data.data.length, "rows");
+
+            const container = document.getElementById('preview-container');
+            const cols = data.columns || [];
+            const rows = data.data || [];
+
+            let html = '';
+
+            // Container with flex layout
+            html += '<div style="display: flex; flex-direction: column; margin: 0; padding: 0; min-height: 0; height: 100%;">';
+
+            // Fixed search box area (does NOT scroll)
+            html += '<div style="flex: 0 0 auto; margin: 0; padding: 0.5rem 0.5rem 0 0.5rem;">';
+            html += '<div class="alert alert-info" style="margin: 0 0 0.5rem 0; padding: 0.5rem 0.75rem;">';
+            html += '<small><strong>厚生労働省の医薬品供給状況データ</strong>（全 ' + data.total_rows + ' 件）</small>';
+            html += '</div>';
+            html += '<div class="input-group" style="margin-bottom: 0.5rem;">';
+            html += '<input type="text" class="form-control" id="supply-search" placeholder="医薬品名、成分名、メーカー名などで検索..." onkeyup="filterSupplyTable()">';
+            html += '<button class="btn btn-outline-secondary" type="button" onclick="clearSupplySearch()">クリア</button>';
+            html += '</div>';
+            html += '<small class="text-muted" id="supply-count" style="display: block; margin-bottom: 0;">全 ' + rows.length + ' 件を表示中</small>';
+            html += '</div>';
+
+            // Scrollable table area (table only)
+            html += '<div style="flex: 1 1 auto; overflow-y: auto; border: 1px solid #ddd; margin: 0.5rem 0.5rem 0.5rem 0.5rem; min-height: 300px;">';
+            html += '<div class="table-responsive" style="margin: 0; min-width: 100%;">';
+            html += '<table class="table table-sm table-striped table-hover" id="supply-table" style="margin-bottom: 0; min-width: 100%;">';
+            html += '<thead class="table-light" style="position: sticky; top: 0; z-index: 1;"><tr>';
+
+            cols.forEach(col => {
+                html += '<th>' + col + '</th>';
+            });
+
+            html += '</tr></thead><tbody>';
+
+            rows.forEach((row, idx) => {
+                html += '<tr class="supply-row">';
+                cols.forEach(col => {
+                    const val = (row[col] || '').toString().replace(/\n/g, '<br>');
+                    html += '<td style="white-space: pre-wrap;">' + val + '</td>';
+                });
+                html += '</tr>';
+            });
+
+            html += '</tbody></table>';
+            html += '</div>';
+            html += '</div>';  // Close scrollable table area
+            html += '</div>';  // Close flex container
+
+            container.innerHTML = html;
+            // キャッシュに保存
+            supplyDataCache = data;
+            supplyDataLoaded = true;
+            console.log("Supply data cached");
+        }
+
+        function filterSupplyTable() {
+            const input = document.getElementById('supply-search');
+            const filter = input.value.toUpperCase();
+            const table = document.getElementById('supply-table');
+            const rows = table.getElementsByClassName('supply-row');
+            let visibleCount = 0;
+
+            for (let i = 0; i < rows.length; i++) {
+                const text = rows[i].textContent || rows[i].innerText;
+                if (text.toUpperCase().indexOf(filter) > -1) {
+                    rows[i].style.display = '';
+                    visibleCount++;
+                } else {
+                    rows[i].style.display = 'none';
+                }
+            }
+
+            document.getElementById('supply-count').textContent = '検索結果: ' + visibleCount + ' 件';
+        }
+
+        function clearSupplySearch() {
+            document.getElementById('supply-search').value = '';
+            filterSupplyTable();
+        }
+
+        // タブ切り替え時のイベントハンドラ
+        document.getElementById('tab-preview').addEventListener('shown.bs.tab', function() {
+            console.log("Preview tab shown");
+            // データが未読み込みの場合のみ読み込む
+            if (!supplyDataLoaded) {
+                previewMHLW();
+            }
+        });
+
+        // ファイル照合タブに切り替える際に、レイアウトを確認
+        document.getElementById('tab-check').addEventListener('shown.bs.tab', function() {
+            console.log("File check tab shown");
+            const contentCheck = document.getElementById('content-check');
+            if (contentCheck) {
+                void contentCheck.offsetHeight;
+            }
+        });
+
+        console.log("All functions ready");
+    </script>
+</body>
+</html>
