@@ -35,7 +35,7 @@
             <div class="d-flex justify-content-between align-items-center">
                 <h1 class="h3 mb-0">薬局向け医薬品供給状況チェッカー</h1>
                 <div class="d-flex gap-2 align-items-center">
-                    <small class="text-muted" id="last-updated">{% if status.last_checked %}最終更新: {{ status.last_checked.split('T')[0] }}{% else %}未更新{% endif %}</small>
+                    <small class="text-muted" id="last-updated">{% if status.last_checked %}最終更新: {{ status.last_checked.split('T')[0] }}{% if status.file_date %}（ファイル: {{ status.file_date }}）{% endif %}{% else %}未更新{% endif %}</small>
                     <button class="btn btn-sm btn-outline-secondary" onclick="refreshData()" title="厚生労働省の最新の医薬品供給情報をダウンロードして更新">
                         🔄 厚労省データを更新
                     </button>
@@ -362,7 +362,11 @@
 
                     // Update last-updated display
                     if (data.last_checked) {
-                        document.getElementById('last-updated').textContent = '最終更新: ' + data.last_checked;
+                        let statusText = '最終更新: ' + data.last_checked;
+                        if (data.file_date) {
+                            statusText += '（ファイル: ' + data.file_date + '）';
+                        }
+                        document.getElementById('last-updated').textContent = statusText;
                     }
                 })
                 .catch(error => {

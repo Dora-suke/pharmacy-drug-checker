@@ -8,6 +8,7 @@ from starlette.middleware.sessions import SessionMiddleware
 import pandas as pd
 import io
 from pathlib import Path
+from datetime import datetime
 
 from app.config import TEMPLATES_DIR, STATIC_DIR, MHLW_EXCEL_PATH, APP_PIN, SESSION_SECRET_KEY
 from app.mhlw_downloader import MHLWDownloader
@@ -189,7 +190,8 @@ async def refresh(request: Request):
             "success": result["success"],
             "message": result["message"],
             "cached": result["cached"],
-            "last_checked": result.get("last_checked"),
+            "last_checked": datetime.now().strftime("%Y-%m-%d"),  # Today's date
+            "file_date": result.get("last_checked"),  # File date from MHLW
         }
     )
 

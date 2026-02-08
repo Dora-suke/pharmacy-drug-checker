@@ -245,10 +245,16 @@ class MHLWDownloader:
 
     def get_status(self) -> Dict[str, Any]:
         """Get current cache status without checking for updates."""
+        # Extract file date from URL
+        file_date = ""
+        if self.meta.get("url"):
+            file_date = self._extract_date_from_filename(self.meta.get("url", ""))
+
         return {
             "file_exists": MHLW_EXCEL_PATH.exists(),
             "file_size": MHLW_EXCEL_PATH.stat().st_size if MHLW_EXCEL_PATH.exists() else 0,
             "last_checked": self.meta.get("downloaded_at"),
             "last_modified": self.meta.get("last_modified"),
             "url": self.meta.get("url", ""),
+            "file_date": file_date,
         }
