@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# 開発用
+.env
+.env.*
+*.log
+
+# キャッシュデータ（Render 起動時に自動再取得）
+cache/*.xlsx
+cache/*.json
+
+# テスト・ドキュメント
+sample/
+*.md
+
+# IDE
+.vscode/
+.idea/
+
+# Git
+.git/
+.gitignore
