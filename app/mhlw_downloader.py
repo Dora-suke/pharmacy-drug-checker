@@ -22,6 +22,7 @@ class MHLWDownloader:
     def __init__(self):
         self.excel_url: Optional[str] = None
         self.meta: Dict[str, Any] = {}
+        self.cached_df = None  # In-memory cache for DataFrame (案2)
         self._load_meta()
 
     def _load_meta(self) -> None:
@@ -43,28 +44,42 @@ class MHLWDownloader:
             print(f"Failed to save meta: {e}")
 
     def _find_excel_link(self) -> Optional[str]:
-        """Scrape MHLW page to find Excel download link."""
+        """Generate Excel download URL directly (案1: Skip scraping for speed)."""
         try:
-            with httpx.Client(timeout=MHLW_DOWNLOAD_TIMEOUT) as client:
-                response = client.get(MHLW_MAIN_URL)
-                response.raise_for_status()
+            # MHLW URL pattern: https://www.mhlw.go.jp/content/10800000/{YYMMDD}iyakuhinkyoukyu.xlsx
+            # Try today's date and previous dates
+            from datetime import datetime, timedelta
 
-            soup = BeautifulSoup(response.content, "lxml")
+            today = datetime.now().date()
 
-            # Look for links containing .xlsx
-            for link in soup.find_all("a"):
-                href = link.get("href", "")
-                if ".xlsx" in href.lower():
-                    # Convert relative URLs to absolute
-                    if href.startswith("/"):
-                        href = urljoin(MHLW_MAIN_URL, href)
-                    elif not href.startswith("http"):
-                        href = urljoin(MHLW_MAIN_URL, href)
-                    return href
+            # Try current date and previous 3 days
+            for days_back in range(0, 4):
+                check_date = today - timedelta(days=days_back)
+                # Format as YYMMDD
+                yy = check_date.strftime("%y")
+                mm = check_date.strftime("%m")
+                dd = check_date.strftime("%d")
+                date_str = f"{yy}{mm}{dd}"
 
+                url = f"https://www.mhlw.go.jp/content/10800000/{date_str}iyakuhinkyoukyu.xlsx"
+                print(f"Trying URL for {check_date}: {url}")
+
+                # Check if URL exists (HEAD request)
+                try:
+                    with httpx.Client(timeout=10) as client:
+                        response = client.head(url, follow_redirects=True)
+                        if response.status_code == 200:
+                            print(f"✅ Found available URL: {url}")
+                            return url
+                except Exception as e:
+                    print(f"⚠️ URL not available: {e}")
+                    continue
+
+            print(f"❌ No available MHLW file found")
             return None
+
         except Exception as e:
-            print(f"Failed to scrape MHLW page: {e}")
+            print(f"Error generating URL: {e}")
             return None
 
     def _get_remote_metadata(self, url: str) -> Optional[Dict[str, str]]:
@@ -84,17 +99,31 @@ class MHLWDownloader:
             return None
 
     def _download_excel(self, url: str) -> bool:
-        """Download Excel file from URL."""
-        try:
-            with httpx.Client(timeout=MHLW_DOWNLOAD_TIMEOUT) as client:
-                response = client.get(url)
-                response.raise_for_status()
+        """Download Excel file from URL with retry logic."""
+        max_retries = 3
+        retry_delay = 2  # seconds
 
-                MHLW_EXCEL_PATH.write_bytes(response.content)
-                return True
-        except Exception as e:
-            print(f"Failed to download Excel: {e}")
-            return False
+        for attempt in range(1, max_retries + 1):
+            try:
+                print(f"Download attempt {attempt}/{max_retries}: {url}")
+                with httpx.Client(timeout=MHLW_DOWNLOAD_TIMEOUT) as client:
+                    response = client.get(url, follow_redirects=True)
+                    response.raise_for_status()
+
+                    MHLW_EXCEL_PATH.write_bytes(response.content)
+                    print(f"✅ Download successful on attempt {attempt}")
+                    return True
+            except Exception as e:
+                print(f"⚠️ Download attempt {attempt} failed: {e}")
+                if attempt < max_retries:
+                    import time
+                    print(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                else:
+                    print(f"❌ Failed to download Excel after {max_retries} attempts")
+                    return False
+
+        return False
 
     def _format_date(self, iso_string: str) -> str:
         """Format ISO datetime string to YYYY-MM-DD."""
@@ -216,6 +245,7 @@ class MHLWDownloader:
                     "url": self.excel_url,
                 }
                 self._save_meta()
+                self.cached_df = None  # Clear in-memory cache on update (案2)
                 result["success"] = True
                 # Extract date and filename
                 last_modified = self._extract_date_from_filename(self.excel_url)

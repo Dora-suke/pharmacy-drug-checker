@@ -218,7 +218,7 @@ async def status(request: Request):
 
 @app.get("/preview-supply")
 async def preview_supply(request: Request, limit: int = 20, offset: int = 0, search: str = ""):
-    """Preview supply status data as JSON table with pagination and search."""
+    """Preview supply status data as JSON table with pagination and search (案2: Memory cache)."""
     # Check authentication
     if not is_authenticated(request):
         return JSONResponse(
@@ -240,17 +240,36 @@ async def preview_supply(request: Request, limit: int = 20, offset: int = 0, sea
                 status_code=404,
             )
 
-        # Read Excel data
-        df = pd.read_excel(MHLW_EXCEL_PATH, sheet_name=0)
+        # Use in-memory cache if available (案2: メモリキャッシュ)
+        if downloader.cached_df is not None:
+            print("Using cached DataFrame from memory")
+            df = downloader.cached_df
+        else:
+            print("Loading DataFrame from Excel file")
+            # Read Excel data
+            df = pd.read_excel(MHLW_EXCEL_PATH, sheet_name=0)
 
-        # Skip first row if it contains headers (①薬剤区分, etc.)
-        if len(df) > 0 and df.iloc[0, 0] == "①薬剤区分":
-            # First row contains header info, use it as column names
-            df.columns = df.iloc[0]
-            df = df.iloc[1:].reset_index(drop=True)
+            # Skip first row if it contains headers (①薬剤区分, etc.)
+            if len(df) > 0 and df.iloc[0, 0] == "①薬剤区分":
+                # First row contains header info, use it as column names
+                df.columns = df.iloc[0]
+                df = df.iloc[1:].reset_index(drop=True)
 
-        # Remove completely empty rows
-        df = df.dropna(how='all')
+            # Remove completely empty rows
+            df = df.dropna(how='all')
+
+            # Cache in memory for future requests (案2)
+            downloader.cached_df = df
+            print("DataFrame cached in memory")
+        else:
+            # Skip first row if it contains headers (①薬剤区分, etc.)
+            if len(df) > 0 and df.iloc[0, 0] == "①薬剤区分":
+                # First row contains header info, use it as column names
+                df.columns = df.iloc[0]
+                df = df.iloc[1:].reset_index(drop=True)
+
+            # Remove completely empty rows
+            df = df.dropna(how='all')
 
         # Convert to list of dicts
         all_records = []
