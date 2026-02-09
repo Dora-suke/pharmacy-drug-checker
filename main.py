@@ -1,6 +1,6 @@
 """FastAPI main application for pharmacy drug checker."""
 
-from fastapi import FastAPI, UploadFile, File, Request, Form
+from fastapi import FastAPI, UploadFile, File, Request, Form, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -172,8 +172,8 @@ async def check(request: Request, file: UploadFile = File(...)):
 
 
 @app.post("/refresh")
-async def refresh(request: Request):
-    """Manually refresh supply data."""
+async def refresh(request: Request, background_tasks: BackgroundTasks):
+    """Manually refresh supply data (non-blocking)."""
     # Check authentication
     if not is_authenticated(request):
         return JSONResponse(
@@ -184,14 +184,18 @@ async def refresh(request: Request):
             status_code=401,
         )
 
-    result = downloader.check_and_update()
+    # Start background update task
+    background_tasks.add_task(downloader.check_and_update)
+
+    # Return immediately with loading message
     return JSONResponse(
         {
-            "success": result["success"],
-            "message": result["message"],
-            "cached": result["cached"],
-            "last_checked": datetime.now().strftime("%Y-%m-%d"),  # Today's date
-            "file_date": result.get("last_checked"),  # File date from MHLW
+            "success": True,
+            "message": "🔄 厚生労働省のデータを更新中です...（数秒かかる場合があります）",
+            "cached": True,
+            "last_checked": datetime.now().strftime("%Y-%m-%d"),
+            "file_date": downloader.meta.get("last_checked", ""),
+            "loading": True,
         }
     )
 
@@ -213,8 +217,8 @@ async def status(request: Request):
 
 
 @app.get("/preview-supply")
-async def preview_supply(request: Request):
-    """Preview supply status data as JSON table."""
+async def preview_supply(request: Request, limit: int = 20, offset: int = 0, search: str = ""):
+    """Preview supply status data as JSON table with pagination and search."""
     # Check authentication
     if not is_authenticated(request):
         return JSONResponse(
@@ -249,7 +253,7 @@ async def preview_supply(request: Request):
         df = df.dropna(how='all')
 
         # Convert to list of dicts
-        records = []
+        all_records = []
         for _, row in df.iterrows():
             record = {}
             for col in df.columns:
@@ -261,15 +265,34 @@ async def preview_supply(request: Request):
                     record[col] = ""
                 else:
                     record[col] = str(value)
-            records.append(record)
+            all_records.append(record)
+
+        # Apply search filter if provided
+        if search:
+            search_lower = search.lower()
+            filtered_records = []
+            for record in all_records:
+                # Search across all columns
+                for value in record.values():
+                    if search_lower in str(value).lower():
+                        filtered_records.append(record)
+                        break
+            all_records = filtered_records
+
+        # Apply pagination
+        total_rows = len(all_records)
+        paginated_records = all_records[offset:offset + limit]
 
         return JSONResponse(
             {
                 "success": True,
-                "message": f"医薬品供給情報（全{len(records)}件）",
+                "message": f"医薬品供給情報（全{total_rows}件）",
                 "columns": list(df.columns),
-                "data": records,  # Return all rows
-                "total_rows": len(records),
+                "data": paginated_records,
+                "total_rows": total_rows,
+                "returned_rows": len(paginated_records),
+                "offset": offset,
+                "limit": limit,
             }
         )
     except Exception as e:
