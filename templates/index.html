@@ -382,7 +382,7 @@
             console.log("refreshData called");
 
             // Show immediate feedback
-            showStatus('🔄 厚生労働省のデータを更新中です...（ネットワーク環境によっては数分かかる場合があります）', 'info');
+            showStatus('🔄 更新リクエストを送信しました...', 'info');
 
             // Disable button temporarily
             const refreshBtn = document.querySelector('button[onclick="refreshData()"]');
@@ -396,15 +396,14 @@
                 .then(data => {
                     console.log("Refresh response:", data);
 
-                    // If loading flag is set, poll for completion
-                    if (data.loading) {
-                        pollRefreshStatus();
-                    } else {
-                        // Update completed
-                        showStatus(data.message, data.success ? 'success' : 'warning');
-                        updateLastCheckedDisplay(data);
-                        reenableRefreshButton();
-                    }
+                    // (最高のエンジニア的改善) バックグラウンドで更新中
+                    // ユーザーを待たせずに、すぐに成功メッセージを表示
+                    showStatus('✅ ' + data.message, 'success');
+                    updateLastCheckedDisplay(data);
+                    reenableRefreshButton();
+
+                    // データは数分後に自動的に更新されます
+                    console.log("Background update will complete in a few minutes");
                 })
                 .catch(error => {
                     console.error("Error:", error);

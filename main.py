@@ -9,6 +9,8 @@ import pandas as pd
 import io
 from pathlib import Path
 from datetime import datetime
+from apscheduler.schedulers.background import BackgroundScheduler
+import atexit
 
 from app.config import TEMPLATES_DIR, STATIC_DIR, MHLW_EXCEL_PATH, APP_PIN, SESSION_SECRET_KEY
 from app.mhlw_downloader import MHLWDownloader
@@ -45,9 +47,29 @@ def is_authenticated(request: Request) -> bool:
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize supply data on startup."""
-    result = downloader.check_and_update(force=True)
+    """Initialize supply data and background scheduler on startup."""
+    # Initial check with cached data
+    result = downloader.check_and_update(force=False)  # Use cache if available
     print(f"起動時チェック: {result['message']}")
+
+    # Setup background scheduler for periodic updates (最高のエンジニア的改善)
+    scheduler = BackgroundScheduler()
+
+    def background_update_task():
+        """Background task to update MHLW data (ユーザーを待たせない)"""
+        print("🔄 バックグラウンド更新タスク開始...")
+        try:
+            result = downloader.check_and_update(force=True)
+            print(f"✅ バックグラウンド更新完了: {result['message']}")
+        except Exception as e:
+            print(f"❌ バックグラウンド更新エラー（キャッシュを使用）: {e}")
+
+    # Schedule update every 2 hours
+    scheduler.add_job(background_update_task, 'interval', hours=2)
+    scheduler.start()
+
+    # Ensure scheduler shuts down when app exits
+    atexit.register(lambda: scheduler.shutdown())
 
 
 # ===== Authentication Routes =====
@@ -173,7 +195,7 @@ async def check(request: Request, file: UploadFile = File(...)):
 
 @app.post("/refresh")
 async def refresh(request: Request, background_tasks: BackgroundTasks):
-    """Manually refresh supply data (non-blocking)."""
+    """Manually refresh supply data (最高のエンジニア的改善：ユーザーを待たせない)"""
     # Check authentication
     if not is_authenticated(request):
         return JSONResponse(
@@ -184,18 +206,21 @@ async def refresh(request: Request, background_tasks: BackgroundTasks):
             status_code=401,
         )
 
-    # Start background update task
-    background_tasks.add_task(downloader.check_and_update)
+    # Get current status (use cache immediately)
+    status = downloader.get_status()
 
-    # Return immediately with loading message
+    # Start background update task (ユーザーを待たせない)
+    background_tasks.add_task(downloader.check_and_update, force=True)
+
+    # Return immediately with current cache status
     return JSONResponse(
         {
             "success": True,
-            "message": "🔄 厚生労働省のデータを更新中です...（数秒かかる場合があります）",
+            "message": "✅ データ更新リクエストを受け付けました。バックグラウンドで更新中です。",
             "cached": True,
             "last_checked": datetime.now().strftime("%Y-%m-%d"),
-            "file_date": downloader.meta.get("last_checked", ""),
-            "loading": True,
+            "file_date": status.get("file_date", downloader.meta.get("last_checked", "")),
+            "loading": False,
         }
     )
 
