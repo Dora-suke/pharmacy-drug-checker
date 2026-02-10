@@ -396,15 +396,12 @@
                 .then(data => {
                     console.log("Refresh response:", data);
 
-                    // (最高のエンジニア的改善) バックグラウンドで更新中
-                    // ユーザーを待たせずに、すぐに成功メッセージを表示
+                    // 更新は自動実行。確認結果のみ即時表示
                     showStatus('✅ ' + data.message, 'success');
                     updateLastCheckedDisplay(data);
                     reenableRefreshButton();
 
-                    // データは数分後に自動的に更新されます
-                    console.log("Background update will complete in a few minutes");
-                    pollRefreshStatus();
+                    // 自動更新のためポーリングは不要
                 })
                 .catch(error => {
                     console.error("Error:", error);
@@ -427,6 +424,10 @@
                 let statusText = '最終更新: ' + data.last_checked;
                 if (data.file_date) {
                     statusText += '（ファイル: ' + data.file_date + '）';
+                }
+                if (data.checked_at) {
+                    const checkDate = data.checked_at.split('T')[0];
+                    statusText += ' / 最終確認: ' + checkDate;
                 }
                 document.getElementById('last-updated').textContent = statusText;
             }

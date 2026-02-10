@@ -300,4 +300,5 @@ class MHLWDownloader:
             "last_refresh_started_at": self.last_refresh_started_at,
             "last_refresh_finished_at": self.last_refresh_finished_at,
             "last_refresh_error": self.last_refresh_error,
+            "checked_at": self.meta.get("checked_at"),
         }

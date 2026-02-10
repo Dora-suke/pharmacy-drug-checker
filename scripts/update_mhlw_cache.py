@@ -13,6 +13,10 @@ def main() -> int:
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {result.get('message', '')}")
 
+    # Always record the check time so the app can display last check
+    downloader.meta["checked_at"] = datetime.now().isoformat()
+    downloader._save_meta()
+
     if not result.get("success"):
         print("Update failed; keeping cache if available.")
         return 1

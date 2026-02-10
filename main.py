@@ -195,7 +195,7 @@ async def check(request: Request, file: UploadFile = File(...)):
 
 @app.post("/refresh")
 async def refresh(request: Request):
-    """Manually refresh supply data (最高のエンジニア的改善：ユーザーを待たせない)"""
+    """Return current cache status (updates run via scheduled GitHub Actions)."""
     # Check authentication
     if not is_authenticated(request):
         return JSONResponse(
@@ -209,19 +209,16 @@ async def refresh(request: Request):
     # Get current status (use cache immediately)
     status = downloader.get_status()
 
-    # Start background update in a separate thread
-    started = downloader.start_background_refresh(force=True)
-
     # Return immediately with current cache status
     return JSONResponse(
         {
             "success": True,
-            "message": "✅ データ更新リクエストを受け付けました。バックグラウンドで更新中です。",
+            "message": "✅ 最新状況を確認しました。更新は毎日 9:30 / 10:00（JST）に自動実行されます。",
             "cached": True,
             "last_checked": datetime.now().strftime("%Y-%m-%d"),
             "file_date": status.get("file_date", ""),
             "loading": False,
-            "started": started,
+            "checked_at": status.get("checked_at"),
         }
     )
 
