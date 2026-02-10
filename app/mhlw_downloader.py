@@ -25,6 +25,7 @@ class MHLWDownloader:
     def __init__(self):
         self.excel_url: Optional[str] = None
         self.meta: Dict[str, Any] = {}
+        self.cached_df = None  # in-memory DataFrame cache for preview
         self.refresh_in_progress = False
         self.last_refresh_started_at: Optional[str] = None
         self.last_refresh_finished_at: Optional[str] = None
