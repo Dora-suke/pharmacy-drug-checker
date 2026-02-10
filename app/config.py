@@ -59,6 +59,8 @@ DRUG_NAME_COLUMN_PATTERNS = [
     "薬品名", "薬品正式名",
     "品名", "正式品名",
     "製品名", "商品名", "製品正式名",
+    # Generic item label (simple lists)
+    "商品",
     # Specific drug name variants (具体的)
     "販売名",
 ]

@@ -154,6 +154,9 @@ class ExcelMatcher:
         # Find pharmacy columns
         pharmacy_code_column = find_column(pharmacy_df, DRUG_CODE_COLUMN_PATTERNS)
         pharmacy_name_column = find_column(pharmacy_df, DRUG_NAME_COLUMN_PATTERNS)
+        # Fallback: if only one column exists, treat it as name
+        if not pharmacy_name_column and len(pharmacy_df.columns) == 1:
+            pharmacy_name_column = pharmacy_df.columns[0]
 
         # Find MHLW specific columns
         mhlw_ingredient_column = self._find_ingredient_column()
