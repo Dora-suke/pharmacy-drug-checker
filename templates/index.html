@@ -441,28 +441,30 @@
 
             // Poll for status update every 2 seconds
             setTimeout(() => {
-                fetch('/status')
+                fetch('/refresh-status')
                     .then(response => response.json())
                     .then(data => {
                         console.log("Status poll:", data, "elapsed:", elapsedSeconds + "s");
 
-                        // Check if file was updated recently (within last 2 minutes)
-                        if (data.last_checked) {
-                            const lastCheckedDate = new Date(data.last_checked);
-                            const now = new Date();
-                            const diffSeconds = (now - lastCheckedDate) / 1000;
+                        if (data.last_refresh_error) {
+                            showStatus('❌ 更新に失敗しました: ' + data.last_refresh_error, 'danger');
+                            reenableRefreshButton();
+                            pollCount = 0;
+                            return;
+                        }
 
-                            if (diffSeconds < 120) {
-                                // Update completed
-                                showStatus('✅ データが更新されました！', 'success');
-                                updateLastCheckedDisplay({
-                                    last_checked: new Date().toISOString().split('T')[0],
-                                    file_date: data.url ? extractDateFromUrl(data.url) : ''
-                                });
-                                reenableRefreshButton();
-                                pollCount = 0;
-                                return;
-                            }
+                        if (!data.refresh_in_progress) {
+                            // Update completed (success or no change)
+                            showStatus('✅ 更新処理が完了しました。', 'success');
+                            updateLastCheckedDisplay({
+                                last_checked: data.last_checked
+                                    ? data.last_checked.split('T')[0]
+                                    : new Date().toISOString().split('T')[0],
+                                file_date: data.file_date || ''
+                            });
+                            reenableRefreshButton();
+                            pollCount = 0;
+                            return;
                         }
 
                         // Continue polling

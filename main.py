@@ -1,6 +1,6 @@
 """FastAPI main application for pharmacy drug checker."""
 
-from fastapi import FastAPI, UploadFile, File, Request, Form, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, Request, Form
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -194,7 +194,7 @@ async def check(request: Request, file: UploadFile = File(...)):
 
 
 @app.post("/refresh")
-async def refresh(request: Request, background_tasks: BackgroundTasks):
+async def refresh(request: Request):
     """Manually refresh supply data (最高のエンジニア的改善：ユーザーを待たせない)"""
     # Check authentication
     if not is_authenticated(request):
@@ -209,8 +209,8 @@ async def refresh(request: Request, background_tasks: BackgroundTasks):
     # Get current status (use cache immediately)
     status = downloader.get_status()
 
-    # Start background update task (ユーザーを待たせない)
-    background_tasks.add_task(downloader.check_and_update, True)
+    # Start background update in a separate thread
+    started = downloader.start_background_refresh(force=True)
 
     # Return immediately with current cache status
     return JSONResponse(
@@ -221,8 +221,24 @@ async def refresh(request: Request, background_tasks: BackgroundTasks):
             "last_checked": datetime.now().strftime("%Y-%m-%d"),
             "file_date": status.get("file_date", ""),
             "loading": False,
+            "started": started,
         }
     )
+
+
+@app.get("/refresh-status")
+async def refresh_status(request: Request):
+    """Get background refresh status."""
+    if not is_authenticated(request):
+        return JSONResponse(
+            {
+                "success": False,
+                "message": "認証が必要です。",
+            },
+            status_code=401,
+        )
+
+    return JSONResponse(downloader.get_status())
 
 
 @app.get("/status")

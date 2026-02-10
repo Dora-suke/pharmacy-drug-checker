@@ -4,6 +4,7 @@ import json
 import httpx
 from pathlib import Path
 from datetime import datetime
+import threading
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from typing import Optional, Dict, Any
@@ -24,6 +25,11 @@ class MHLWDownloader:
     def __init__(self):
         self.excel_url: Optional[str] = None
         self.meta: Dict[str, Any] = {}
+        self.refresh_in_progress = False
+        self.last_refresh_started_at: Optional[str] = None
+        self.last_refresh_finished_at: Optional[str] = None
+        self.last_refresh_error: Optional[str] = None
+        self._refresh_lock = threading.Lock()
         self._load_meta()
 
     def _load_meta(self) -> None:
@@ -259,6 +265,28 @@ class MHLWDownloader:
 
         return result
 
+    def start_background_refresh(self, force: bool = True) -> bool:
+        """Start background refresh in a dedicated thread if not already running."""
+        with self._refresh_lock:
+            if self.refresh_in_progress:
+                return False
+            self.refresh_in_progress = True
+            self.last_refresh_started_at = datetime.now().isoformat()
+            self.last_refresh_error = None
+
+        def _run():
+            try:
+                self.check_and_update(force=force)
+            except Exception as e:
+                self.last_refresh_error = str(e)
+            finally:
+                self.last_refresh_finished_at = datetime.now().isoformat()
+                self.refresh_in_progress = False
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+        return True
+
     def get_status(self) -> Dict[str, Any]:
         """Get current cache status without checking for updates."""
         return {
@@ -268,4 +296,8 @@ class MHLWDownloader:
             "last_modified": self.meta.get("last_modified"),
             "url": self.meta.get("url", ""),
             "file_date": self._extract_date_from_filename(self.meta.get("url", "")),
+            "refresh_in_progress": self.refresh_in_progress,
+            "last_refresh_started_at": self.last_refresh_started_at,
+            "last_refresh_finished_at": self.last_refresh_finished_at,
+            "last_refresh_error": self.last_refresh_error,
         }
