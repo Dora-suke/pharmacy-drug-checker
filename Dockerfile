@@ -23,7 +23,8 @@ RUN pip install --no-cache-dir \
     jinja2>=3.1.0 \
     python-multipart>=0.0.6 \
     itsdangerous>=2.1.0 \
-    python-dotenv>=1.0.0
+    python-dotenv>=1.0.0 \
+    apscheduler>=3.10.4
 
 # Copy application code
 COPY . .
