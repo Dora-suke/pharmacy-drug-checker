@@ -23,7 +23,11 @@ MHLW_META_PATH = CACHE_DIR / "mhlw_meta.json"
 
 # MHLW URLs and settings
 MHLW_MAIN_URL = "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/kenkou_iryou/iryou/kouhatu-iyaku/04_00003.html"
-MHLW_DOWNLOAD_TIMEOUT = 120  # seconds (increased for slow networks like Render)
+# Network timeouts (seconds)
+# Keep these small to ensure the manual refresh finishes quickly.
+MHLW_SCRAPE_TIMEOUT = 10
+MHLW_META_TIMEOUT = 10
+MHLW_DOWNLOAD_TIMEOUT = 25
 
 # Drug information filtering
 DAYS_BACK = 10  # Number of days back to check for updates

@@ -12,6 +12,8 @@ from app.config import (
     MHLW_MAIN_URL,
     MHLW_EXCEL_PATH,
     MHLW_META_PATH,
+    MHLW_SCRAPE_TIMEOUT,
+    MHLW_META_TIMEOUT,
     MHLW_DOWNLOAD_TIMEOUT,
 )
 
@@ -22,7 +24,6 @@ class MHLWDownloader:
     def __init__(self):
         self.excel_url: Optional[str] = None
         self.meta: Dict[str, Any] = {}
-        self.cached_df = None  # In-memory cache for DataFrame (案2)
         self._load_meta()
 
     def _load_meta(self) -> None:
@@ -44,35 +45,36 @@ class MHLWDownloader:
             print(f"Failed to save meta: {e}")
 
     def _find_excel_link(self) -> Optional[str]:
-        """Generate Excel download URL directly (最速化：HEAD リクエストをスキップ)."""
+        """Scrape MHLW page to find Excel download link."""
         try:
-            # MHLW URL pattern: https://www.mhlw.go.jp/content/10800000/{YYMMDD}iyakuhinkyoukyu.xlsx
-            from datetime import datetime
+            timeout = httpx.Timeout(MHLW_SCRAPE_TIMEOUT)
+            with httpx.Client(timeout=timeout) as client:
+                response = client.get(MHLW_MAIN_URL)
+                response.raise_for_status()
 
-            today = datetime.now().date()
+            soup = BeautifulSoup(response.content, "lxml")
 
-            # Try only today's date (最速化: 1 回だけ試す)
-            yy = today.strftime("%y")
-            mm = today.strftime("%m")
-            dd = today.strftime("%d")
-            date_str = f"{yy}{mm}{dd}"
+            # Look for links containing .xlsx
+            for link in soup.find_all("a"):
+                href = link.get("href", "")
+                if ".xlsx" in href.lower():
+                    # Convert relative URLs to absolute
+                    if href.startswith("/"):
+                        href = urljoin(MHLW_MAIN_URL, href)
+                    elif not href.startswith("http"):
+                        href = urljoin(MHLW_MAIN_URL, href)
+                    return href
 
-            url = f"https://www.mhlw.go.jp/content/10800000/{date_str}iyakuhinkyoukyu.xlsx"
-            print(f"Excel URL: {url}")
-
-            # Skip HEAD request to save time (最速化)
-            # We'll try direct GET download instead
-            return url
-
+            return None
         except Exception as e:
-            print(f"Error generating URL: {e}")
+            print(f"Failed to scrape MHLW page: {e}")
             return None
 
     def _get_remote_metadata(self, url: str) -> Optional[Dict[str, str]]:
-        """Get ETag and Last-Modified from remote server (最速化)."""
+        """Get ETag and Last-Modified from remote server."""
         try:
-            # Quick HEAD request with short timeout (最速化)
-            with httpx.Client(timeout=10) as client:
+            timeout = httpx.Timeout(MHLW_META_TIMEOUT)
+            with httpx.Client(timeout=timeout) as client:
                 response = client.head(url, follow_redirects=True)
                 response.raise_for_status()
 
@@ -82,24 +84,22 @@ class MHLWDownloader:
                     "content_length": response.headers.get("content-length", ""),
                 }
         except Exception as e:
-            print(f"⚠️ Metadata check failed: {e} (using cache)")
+            print(f"Failed to get remote metadata: {e}")
             return None
 
     def _download_excel(self, url: str) -> bool:
-        """Download Excel file from URL (最速化：1回で諦めてキャッシュ利用)."""
+        """Download Excel file from URL."""
         try:
-            print(f"Attempting download: {url}")
-            # Shorter timeout for faster failure detection (最速化)
-            with httpx.Client(timeout=30) as client:
-                response = client.get(url, follow_redirects=True)
-                response.raise_for_status()
-
-                MHLW_EXCEL_PATH.write_bytes(response.content)
-                print(f"✅ Download successful")
+            timeout = httpx.Timeout(MHLW_DOWNLOAD_TIMEOUT)
+            with httpx.Client(timeout=timeout) as client:
+                with client.stream("GET", url, follow_redirects=True) as response:
+                    response.raise_for_status()
+                    with open(MHLW_EXCEL_PATH, "wb") as f:
+                        for chunk in response.iter_bytes():
+                            f.write(chunk)
                 return True
         except Exception as e:
-            print(f"⚠️ Download failed: {e} (using cached data)")
-            # Fail fast - don't retry (最速化)
+            print(f"Failed to download Excel: {e}")
             return False
 
     def _format_date(self, iso_string: str) -> str:
@@ -157,13 +157,9 @@ class MHLWDownloader:
             pass
         return "不明"
 
-    def check_and_update(self, force: bool = False) -> Dict[str, Any]:
+    def check_and_update(self) -> Dict[str, Any]:
         """
         Check for updates and download if necessary.
-
-        Args:
-            force: If True, always download the latest data, ignoring cache.
-
         Returns a dict with status and metadata.
         """
         result = {
@@ -174,8 +170,14 @@ class MHLWDownloader:
             "file_exists": MHLW_EXCEL_PATH.exists(),
         }
 
-        # Find Excel link
-        self.excel_url = self._find_excel_link()
+        # Prefer cached URL for speed; fall back to scraping if needed
+        cached_url = self.meta.get("url", "")
+        if cached_url:
+            self.excel_url = cached_url
+
+        if not self.excel_url:
+            self.excel_url = self._find_excel_link()
+
         if not self.excel_url:
             result["message"] = "Failed to find Excel download link"
             # Use cached file if available
@@ -192,6 +194,12 @@ class MHLWDownloader:
 
         # Get remote metadata
         remote_meta = self._get_remote_metadata(self.excel_url)
+        if not remote_meta and cached_url and self.excel_url == cached_url:
+            # If cached URL failed, try scraping a fresh URL once
+            scraped_url = self._find_excel_link()
+            if scraped_url and scraped_url != self.excel_url:
+                self.excel_url = scraped_url
+                remote_meta = self._get_remote_metadata(self.excel_url)
         if not remote_meta:
             result["message"] = "Failed to get remote metadata"
             if result["file_exists"]:
@@ -206,10 +214,11 @@ class MHLWDownloader:
 
         # Check if cache needs update
         cache_needs_update = (
-            force  # Always update if forced
-            or not MHLW_EXCEL_PATH.exists()
+            not MHLW_EXCEL_PATH.exists()
             or self.meta.get("etag") != remote_meta["etag"]
             or self.meta.get("last_modified") != remote_meta["last_modified"]
+            or self.meta.get("content_length") != remote_meta["content_length"]
+            or self.meta.get("url") != self.excel_url
         )
 
         if cache_needs_update:
@@ -222,7 +231,6 @@ class MHLWDownloader:
                     "url": self.excel_url,
                 }
                 self._save_meta()
-                self.cached_df = None  # Clear in-memory cache on update (案2)
                 result["success"] = True
                 # Extract date and filename
                 last_modified = self._extract_date_from_filename(self.excel_url)
@@ -252,16 +260,10 @@ class MHLWDownloader:
 
     def get_status(self) -> Dict[str, Any]:
         """Get current cache status without checking for updates."""
-        # Extract file date from URL
-        file_date = ""
-        if self.meta.get("url"):
-            file_date = self._extract_date_from_filename(self.meta.get("url", ""))
-
         return {
             "file_exists": MHLW_EXCEL_PATH.exists(),
             "file_size": MHLW_EXCEL_PATH.stat().st_size if MHLW_EXCEL_PATH.exists() else 0,
             "last_checked": self.meta.get("downloaded_at"),
             "last_modified": self.meta.get("last_modified"),
             "url": self.meta.get("url", ""),
-            "file_date": file_date,
         }
