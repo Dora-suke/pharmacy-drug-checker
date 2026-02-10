@@ -157,7 +157,7 @@ class MHLWDownloader:
             pass
         return "不明"
 
-    def check_and_update(self) -> Dict[str, Any]:
+    def check_and_update(self, force: bool = False) -> Dict[str, Any]:
         """
         Check for updates and download if necessary.
         Returns a dict with status and metadata.
@@ -214,7 +214,8 @@ class MHLWDownloader:
 
         # Check if cache needs update
         cache_needs_update = (
-            not MHLW_EXCEL_PATH.exists()
+            force
+            or not MHLW_EXCEL_PATH.exists()
             or self.meta.get("etag") != remote_meta["etag"]
             or self.meta.get("last_modified") != remote_meta["last_modified"]
             or self.meta.get("content_length") != remote_meta["content_length"]
@@ -266,4 +267,5 @@ class MHLWDownloader:
             "last_checked": self.meta.get("downloaded_at"),
             "last_modified": self.meta.get("last_modified"),
             "url": self.meta.get("url", ""),
+            "file_date": self._extract_date_from_filename(self.meta.get("url", "")),
         }

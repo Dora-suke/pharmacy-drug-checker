@@ -404,6 +404,7 @@
 
                     // データは数分後に自動的に更新されます
                     console.log("Background update will complete in a few minutes");
+                    pollRefreshStatus();
                 })
                 .catch(error => {
                     console.error("Error:", error);

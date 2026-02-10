@@ -210,7 +210,7 @@ async def refresh(request: Request, background_tasks: BackgroundTasks):
     status = downloader.get_status()
 
     # Start background update task (ユーザーを待たせない)
-    background_tasks.add_task(downloader.check_and_update, force=True)
+    background_tasks.add_task(downloader.check_and_update, True)
 
     # Return immediately with current cache status
     return JSONResponse(
@@ -219,7 +219,7 @@ async def refresh(request: Request, background_tasks: BackgroundTasks):
             "message": "✅ データ更新リクエストを受け付けました。バックグラウンドで更新中です。",
             "cached": True,
             "last_checked": datetime.now().strftime("%Y-%m-%d"),
-            "file_date": status.get("file_date", downloader.meta.get("last_checked", "")),
+            "file_date": status.get("file_date", ""),
             "loading": False,
         }
     )
