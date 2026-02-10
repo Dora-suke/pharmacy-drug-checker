@@ -299,16 +299,6 @@ async def preview_supply(request: Request, limit: int = 20, offset: int = 0, sea
             # Cache in memory for future requests (案2)
             downloader.cached_df = df
             print("DataFrame cached in memory")
-        else:
-            # Skip first row if it contains headers (①薬剤区分, etc.)
-            if len(df) > 0 and df.iloc[0, 0] == "①薬剤区分":
-                # First row contains header info, use it as column names
-                df.columns = df.iloc[0]
-                df = df.iloc[1:].reset_index(drop=True)
-
-            # Remove completely empty rows
-            df = df.dropna(how='all')
-
         # Convert to list of dicts
         all_records = []
         for _, row in df.iterrows():
