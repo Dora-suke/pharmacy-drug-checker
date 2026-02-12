@@ -71,3 +71,10 @@ ITEMS_PER_PAGE = 100
 # Authentication settings
 APP_PIN = os.environ.get("APP_PIN", "")
 SESSION_SECRET_KEY = os.environ.get("SESSION_SECRET_KEY", "change-this-secret-key")
+
+# Upload limits
+# Keep modest for Render free tiers; can be overridden with MAX_UPLOAD_MB env var.
+MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "5"))
+
+# Processing time limit (seconds)
+MAX_PROCESS_SECONDS = int(os.environ.get("MAX_PROCESS_SECONDS", "120"))

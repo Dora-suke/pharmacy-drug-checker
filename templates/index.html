@@ -101,6 +101,10 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         console.log("index.html loaded");
+        const MAX_UPLOAD_MB = {{ max_upload_mb|default(5) }};
+        const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
+        const ASYNC_THRESHOLD_MB = 1;
+        const ASYNC_THRESHOLD_BYTES = ASYNC_THRESHOLD_MB * 1024 * 1024;
 
         // キャッシュ用グローバル変数
         let supplyDataCache = null;
@@ -124,6 +128,13 @@
                 return;
             }
 
+            if (file.size > MAX_UPLOAD_BYTES) {
+                showStatus('エラー: ファイルサイズが大きすぎます（上限 ' + MAX_UPLOAD_MB + 'MB）', 'danger');
+                const container = document.getElementById('results-container');
+                container.innerHTML = '<p class="text-danger">エラー: ファイルサイズが大きすぎます（上限 ' + MAX_UPLOAD_MB + 'MB）</p>';
+                return;
+            }
+
             console.log("File selected:", file.name);
 
             // Show loading indicator immediately
@@ -144,11 +155,48 @@
 
             console.log("Sending POST /check");
 
+            const useAsync = file.size >= ASYNC_THRESHOLD_BYTES;
+            if (useAsync) {
+                showStatus('⏳ 大きめのファイルのため非同期処理で実行します', 'info');
+                fetch('/check_async', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.success) {
+                        showStatus('エラー: ' + data.message, 'danger');
+                        container.innerHTML = '<p class="text-danger">エラー: ' + data.message + '</p>';
+                        if (checkBtn) {
+                            checkBtn.disabled = false;
+                            checkBtn.textContent = '照合実行';
+                        }
+                        return;
+                    }
+                    pollJobStatus(data.job_id, container, checkBtn);
+                })
+                .catch(error => {
+                    showStatus('エラー: ' + error.message, 'danger');
+                    container.innerHTML = '<p class="text-danger">エラー: ' + error.message + '</p>';
+                    if (checkBtn) {
+                        checkBtn.disabled = false;
+                        checkBtn.textContent = '照合実行';
+                    }
+                });
+                return;
+            }
+
+            const controller = new AbortController();
+            const timeoutMs = 120000;
+            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
             fetch('/check', {
                 method: 'POST',
-                body: formData
+                body: formData,
+                signal: controller.signal
             })
             .then(response => {
+                clearTimeout(timeoutId);
                 console.log("Response status:", response.status);
                 return response.json();
             })
@@ -172,8 +220,13 @@
             })
             .catch(error => {
                 console.error("Fetch error:", error);
+                if (error.name === 'AbortError') {
+                    showStatus('エラー: 処理がタイムアウトしました（' + (timeoutMs / 1000) + '秒）', 'danger');
+                    container.innerHTML = '<p class="text-danger">エラー: 処理がタイムアウトしました（' + (timeoutMs / 1000) + '秒）</p>';
+                } else {
                 showStatus('エラー: ' + error.message, 'danger');
                 container.innerHTML = '<p class="text-danger">エラー: ' + error.message + '</p>';
+                }
 
                 // Re-enable button
                 if (checkBtn) {
@@ -181,6 +234,44 @@
                     checkBtn.textContent = '照合実行';
                 }
             });
+        }
+
+        function pollJobStatus(jobId, container, checkBtn) {
+            const intervalMs = 2000;
+            const poll = () => {
+                fetch('/check_status/' + jobId)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'running') {
+                        setTimeout(poll, intervalMs);
+                        return;
+                    }
+                    if (!data.success) {
+                        showStatus('エラー: ' + data.message, 'danger');
+                        container.innerHTML = '<p class="text-danger">エラー: ' + data.message + '</p>';
+                        if (checkBtn) {
+                            checkBtn.disabled = false;
+                            checkBtn.textContent = '照合実行';
+                        }
+                        return;
+                    }
+                    showStatus('✅ マッチ: ' + data.stats.matched_rows + '件 / 10日以内: ' + data.stats.recent_updates + '件', 'success');
+                    displayResults(data.data);
+                    if (checkBtn) {
+                        checkBtn.disabled = false;
+                        checkBtn.textContent = '照合実行';
+                    }
+                })
+                .catch(error => {
+                    showStatus('エラー: ' + error.message, 'danger');
+                    container.innerHTML = '<p class="text-danger">エラー: ' + error.message + '</p>';
+                    if (checkBtn) {
+                        checkBtn.disabled = false;
+                        checkBtn.textContent = '照合実行';
+                    }
+                });
+            };
+            poll();
         }
 
         function displayResults(data) {

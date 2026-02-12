@@ -7,6 +7,9 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 import pandas as pd
 import io
+import time
+import asyncio
+import uuid
 from pathlib import Path
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -14,7 +17,35 @@ import atexit
 
 from app.config import TEMPLATES_DIR, STATIC_DIR, MHLW_EXCEL_PATH, APP_PIN, SESSION_SECRET_KEY
 from app.mhlw_downloader import MHLWDownloader
-from app.excel_matcher import ExcelMatcher
+from app.excel_matcher import ExcelMatcher, find_column
+from app.config import (
+    MAX_UPLOAD_MB,
+    MAX_PROCESS_SECONDS,
+    DRUG_CODE_COLUMN_PATTERNS,
+    DRUG_NAME_COLUMN_PATTERNS,
+)
+
+# In-memory job store (single instance only)
+JOBS = {}
+
+def _process_excel_content(content: bytes) -> dict:
+    """Process Excel content and return match result."""
+    header_df = pd.read_excel(io.BytesIO(content), sheet_name=0, nrows=0)
+    code_col = find_column(header_df, DRUG_CODE_COLUMN_PATTERNS)
+    name_col = find_column(header_df, DRUG_NAME_COLUMN_PATTERNS)
+    usecols = None
+    if code_col and name_col:
+        usecols = [code_col, name_col]
+    elif code_col:
+        usecols = [code_col]
+    elif name_col:
+        usecols = [name_col]
+
+    pharmacy_df = pd.read_excel(io.BytesIO(content), sheet_name=0, usecols=usecols)
+    print(f"📄 pharmacy rows: {len(pharmacy_df)}")
+
+    matcher = ExcelMatcher()
+    return matcher.match_and_filter(pharmacy_df)
 
 app = FastAPI(title="Pharmacy Drug Checker")
 
@@ -135,6 +166,7 @@ async def index(request: Request):
         {
             "request": request,
             "status": status,
+            "max_upload_mb": MAX_UPLOAD_MB,
         },
     )
 
@@ -163,25 +195,58 @@ async def check(request: Request, file: UploadFile = File(...)):
         )
 
     try:
-        # Read uploaded file
-        content = await file.read()
-        pharmacy_df = pd.read_excel(io.BytesIO(content), sheet_name=0)
+        start_ts = time.perf_counter()
+        print("🧪 /check start")
+        # Read uploaded file with size limit to avoid long hangs
+        max_bytes = MAX_UPLOAD_MB * 1024 * 1024
+        size = 0
+        chunks = []
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > max_bytes:
+                return JSONResponse(
+                    {
+                        "success": False,
+                        "message": f"ファイルサイズが大きすぎます（上限 {MAX_UPLOAD_MB}MB）",
+                        "data": [],
+                        "stats": {},
+                    },
+                    status_code=413,
+                )
+            chunks.append(chunk)
+
+        content = b"".join(chunks)
+        print(f"📦 upload bytes: {size}")
 
         # Debug: Log uploaded file info
         print(f"📤 アップロードされたファイル: {file.filename}")
-        print(f"   行数: {len(pharmacy_df)}")
-        print(f"   最初の3行:")
-        for idx, row in pharmacy_df.head(3).iterrows():
-            code = row.get('コード', '')
-            name = row.get('薬品名', '')
-            print(f"     【{idx}】Code: {code}, Name: {name}")
 
-        # Match and filter
-        matcher = ExcelMatcher()
-        result = matcher.match_and_filter(pharmacy_df)
+        try:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(_process_excel_content, content),
+                timeout=MAX_PROCESS_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            return JSONResponse(
+                {
+                    "success": False,
+                    "message": f"処理がタイムアウトしました（上限 {MAX_PROCESS_SECONDS} 秒）",
+                    "data": [],
+                    "stats": {},
+                },
+                status_code=504,
+            )
+        elapsed = time.perf_counter() - start_ts
+        result["elapsed_sec"] = round(elapsed, 3)
+        print(f"✅ /check done in {elapsed:.3f}s")
 
         return JSONResponse(result)
     except Exception as e:
+        elapsed = time.perf_counter() - start_ts
+        print(f"❌ /check failed in {elapsed:.3f}s: {e}")
         return JSONResponse(
             {
                 "success": False,
@@ -351,6 +416,100 @@ async def preview_supply(request: Request, limit: int = 20, offset: int = 0, sea
             },
             status_code=400,
         )
+
+
+@app.post("/check_async")
+async def check_async(request: Request, file: UploadFile = File(...)):
+    """Start async check job for uploaded Excel file."""
+    if not is_authenticated(request):
+        return JSONResponse(
+            {
+                "success": False,
+                "message": "認証が必要です。",
+            },
+            status_code=401,
+        )
+
+    max_bytes = MAX_UPLOAD_MB * 1024 * 1024
+    size = 0
+    chunks = []
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        size += len(chunk)
+        if size > max_bytes:
+            return JSONResponse(
+                {
+                    "success": False,
+                    "message": f"ファイルサイズが大きすぎます（上限 {MAX_UPLOAD_MB}MB）",
+                    "data": [],
+                    "stats": {},
+                },
+                status_code=413,
+            )
+        chunks.append(chunk)
+
+    content = b"".join(chunks)
+    job_id = str(uuid.uuid4())
+    JOBS[job_id] = {"status": "running", "result": None, "error": None}
+    print(f"🧵 async job start: {job_id}")
+
+    async def _run_job():
+        start_ts = time.perf_counter()
+        try:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(_process_excel_content, content),
+                timeout=MAX_PROCESS_SECONDS,
+            )
+            elapsed = time.perf_counter() - start_ts
+            result["elapsed_sec"] = round(elapsed, 3)
+            JOBS[job_id] = {"status": "done", "result": result, "error": None}
+            print(f"✅ async job done: {job_id} ({elapsed:.3f}s)")
+        except asyncio.TimeoutError:
+            JOBS[job_id] = {
+                "status": "error",
+                "result": None,
+                "error": f"処理がタイムアウトしました（上限 {MAX_PROCESS_SECONDS} 秒）",
+            }
+            print(f"⏱️ async job timeout: {job_id}")
+        except Exception as e:
+            JOBS[job_id] = {"status": "error", "result": None, "error": str(e)}
+            print(f"❌ async job error: {job_id}: {e}")
+
+    asyncio.create_task(_run_job())
+
+    return JSONResponse({"success": True, "job_id": job_id})
+
+
+@app.get("/check_status/{job_id}")
+async def check_status(request: Request, job_id: str):
+    """Check async job status."""
+    if not is_authenticated(request):
+        return JSONResponse(
+            {
+                "success": False,
+                "message": "認証が必要です。",
+            },
+            status_code=401,
+        )
+
+    job = JOBS.get(job_id)
+    if not job:
+        return JSONResponse(
+            {"success": False, "message": "ジョブが見つかりません。"},
+            status_code=404,
+        )
+
+    if job["status"] == "running":
+        return JSONResponse({"success": True, "status": "running"})
+    if job["status"] == "error":
+        return JSONResponse(
+            {"success": False, "status": "error", "message": job["error"]},
+            status_code=500,
+        )
+
+    return JSONResponse(job["result"])
 
 
 if __name__ == "__main__":
