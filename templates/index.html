@@ -105,6 +105,7 @@
         const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
         const ASYNC_THRESHOLD_MB = 0;
         const ASYNC_THRESHOLD_BYTES = ASYNC_THRESHOLD_MB * 1024 * 1024;
+        const MAX_PROCESS_SECONDS = {{ max_process_seconds|default(300) }};
 
         // キャッシュ用グローバル変数
         let supplyDataCache = null;
@@ -187,7 +188,7 @@
             }
 
             const controller = new AbortController();
-            const timeoutMs = 120000;
+            const timeoutMs = MAX_PROCESS_SECONDS * 1000;
             const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
             fetch('/check', {

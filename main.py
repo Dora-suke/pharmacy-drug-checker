@@ -167,6 +167,7 @@ async def index(request: Request):
             "request": request,
             "status": status,
             "max_upload_mb": MAX_UPLOAD_MB,
+            "max_process_seconds": MAX_PROCESS_SECONDS,
         },
     )
 
