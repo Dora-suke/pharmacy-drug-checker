@@ -17,7 +17,7 @@ import atexit
 
 from app.config import TEMPLATES_DIR, STATIC_DIR, MHLW_EXCEL_PATH, APP_PIN, SESSION_SECRET_KEY
 from app.mhlw_downloader import MHLWDownloader
-from app.excel_matcher import ExcelMatcher, find_column
+from app.excel_matcher import ExcelMatcher, find_column, normalize_text
 from app.config import (
     MAX_UPLOAD_MB,
     MAX_PROCESS_SECONDS,
@@ -42,6 +42,32 @@ def _process_excel_content(content: bytes) -> dict:
         usecols = [name_col]
 
     pharmacy_df = pd.read_excel(io.BytesIO(content), sheet_name=0, usecols=usecols)
+
+    # Handle files where the first row contains headers
+    if len(pharmacy_df) > 0:
+        first_row = [str(v) if pd.notna(v) else "" for v in pharmacy_df.iloc[0].tolist()]
+        joined = " ".join(first_row)
+        if any(p in joined for p in ["YJコード", "⑤YJコード", "⑥品名", "品名"]):
+            pharmacy_df.columns = pharmacy_df.iloc[0]
+            pharmacy_df = pharmacy_df.iloc[1:].reset_index(drop=True)
+
+    # Drop completely empty rows
+    pharmacy_df = pharmacy_df.dropna(how="all")
+
+    # Drop rows where both code and name are empty after normalization
+    if code_col in pharmacy_df.columns or name_col in pharmacy_df.columns:
+        code_series = pharmacy_df[code_col] if code_col in pharmacy_df.columns else None
+        name_series = pharmacy_df[name_col] if name_col in pharmacy_df.columns else None
+        def _is_empty(v):
+            if pd.isna(v):
+                return True
+            return normalize_text(str(v)) == ""
+        mask = []
+        for i in range(len(pharmacy_df)):
+            c_empty = _is_empty(code_series.iloc[i]) if code_series is not None else True
+            n_empty = _is_empty(name_series.iloc[i]) if name_series is not None else True
+            mask.append(not (c_empty and n_empty))
+        pharmacy_df = pharmacy_df.loc[mask].reset_index(drop=True)
     print(f"📄 pharmacy rows: {len(pharmacy_df)}")
 
     matcher = ExcelMatcher()
