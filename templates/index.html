@@ -103,7 +103,7 @@
         console.log("index.html loaded");
         const MAX_UPLOAD_MB = {{ max_upload_mb|default(5) }};
         const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
-        const ASYNC_THRESHOLD_MB = 1;
+        const ASYNC_THRESHOLD_MB = 0;
         const ASYNC_THRESHOLD_BYTES = ASYNC_THRESHOLD_MB * 1024 * 1024;
 
         // キャッシュ用グローバル変数

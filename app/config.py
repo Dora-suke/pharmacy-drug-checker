@@ -77,4 +77,4 @@ SESSION_SECRET_KEY = os.environ.get("SESSION_SECRET_KEY", "change-this-secret-ke
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "5"))
 
 # Processing time limit (seconds)
-MAX_PROCESS_SECONDS = int(os.environ.get("MAX_PROCESS_SECONDS", "120"))
+MAX_PROCESS_SECONDS = int(os.environ.get("MAX_PROCESS_SECONDS", "300"))
