@@ -166,60 +166,69 @@ class ExcelMatcher:
         matched_pharmacy_codes = set()  # Track which pharmacy codes have been matched
         cutoff_date = datetime.now() - timedelta(days=days_back)
 
-        for idx, pharmacy_row in pharmacy_df.iterrows():
+        # Prebuild lookup maps for faster matching
+        mhlw_cols = list(self.mhlw_df.columns)
+        mhlw_col_index = {c: i for i, c in enumerate(mhlw_cols)}
+        update_idx = mhlw_col_index.get(self.update_date_column)
+        code_idx = mhlw_col_index.get(self.drug_code_column)
+        name_idx = mhlw_col_index.get(self.drug_name_column)
+
+        code_map: Dict[str, List[tuple]] = {}
+        name_map: Dict[str, List[tuple]] = {}
+        name_prefix_map: Dict[str, List[tuple]] = {}
+
+        for row in self.mhlw_df.itertuples(index=False, name=None):
+            if code_idx is not None:
+                code_val = row[code_idx]
+                code_norm = normalize_text(str(code_val)) if pd.notna(code_val) else ""
+                if code_norm:
+                    code_map.setdefault(code_norm, []).append(row)
+            if name_idx is not None:
+                name_val = row[name_idx]
+                name_norm = normalize_text(str(name_val)) if pd.notna(name_val) else ""
+                if name_norm:
+                    name_map.setdefault(name_norm, []).append(row)
+                    if len(name_norm) > 3:
+                        prefix = name_norm[:5]
+                        name_prefix_map.setdefault(prefix, []).append(row)
+
+        ph_cols = list(pharmacy_df.columns)
+        ph_code_idx = ph_cols.index(pharmacy_code_column) if pharmacy_code_column else None
+        ph_name_idx = ph_cols.index(pharmacy_name_column) if pharmacy_name_column else None
+
+        for pharmacy_row_tuple in pharmacy_df.itertuples(index=False, name=None):
             # Try to match by drug code first
             mhlw_matches = []
 
-            if pharmacy_code_column:
-                raw_code = pharmacy_row.get(pharmacy_code_column, "")
+            if ph_code_idx is not None:
+                raw_code = pharmacy_row_tuple[ph_code_idx]
                 # Skip if code is NaN/None
                 if pd.notna(raw_code):
                     code = normalize_text(str(raw_code))
                 else:
                     code = ""
                 if code and len(code) > 0:
-                    if self.drug_code_column:
-                        matches = self.mhlw_df[
-                            self.mhlw_df[self.drug_code_column].apply(
-                                lambda x: normalize_text(str(x)) == code
-                            )
-                        ]
-                        if not matches.empty:
-                            mhlw_matches = list(matches.itertuples(index=False, name=None))
+                    mhlw_matches = code_map.get(code, [])
 
             # Fallback to drug name matching
-            if not mhlw_matches and pharmacy_name_column:
-                raw_name = pharmacy_row.get(pharmacy_name_column, "")
+            if not mhlw_matches and ph_name_idx is not None:
+                raw_name = pharmacy_row_tuple[ph_name_idx]
                 # Skip if name is NaN/None
                 if pd.notna(raw_name):
                     name = normalize_text(str(raw_name))
                 else:
                     name = ""
                 if name and len(name) > 0:
-                    if self.drug_name_column:
-                        # Try exact match first, then partial match
-                        matches = self.mhlw_df[
-                            self.mhlw_df[self.drug_name_column].apply(
-                                lambda x: normalize_text(str(x)) == name
-                            )
-                        ]
-
-                        # If no exact match, try partial match (first 5+ characters)
-                        if matches.empty and len(name) > 3:
-                            matches = self.mhlw_df[
-                                self.mhlw_df[self.drug_name_column].apply(
-                                    lambda x: normalize_text(str(x)).startswith(name[:5])
-                                )
-                            ]
-
-                        if not matches.empty:
-                            mhlw_matches = list(matches.itertuples(index=False, name=None))
+                    mhlw_matches = name_map.get(name, [])
+                    if not mhlw_matches and len(name) > 3:
+                        mhlw_matches = name_prefix_map.get(name[:5], [])
 
             if not mhlw_matches:
                 continue
 
             # Skip if pharmacy code already matched (only if code exists)
-            pharmacy_code = self._safe_str(pharmacy_row.get(pharmacy_code_column, ""))
+            pharmacy_row_series = pd.Series(dict(zip(ph_cols, pharmacy_row_tuple)))
+            pharmacy_code = self._safe_str(pharmacy_row_series.get(pharmacy_code_column, ""))
             if pharmacy_code and pharmacy_code in matched_pharmacy_codes:
                 continue
             # Only add to matched if code exists
@@ -232,8 +241,9 @@ class ExcelMatcher:
             has_recent = False
             if self.update_date_column:
                 for mhlw_match_tuple in mhlw_matches:
-                    mhlw_match = pd.Series(dict(zip(self.mhlw_df.columns, mhlw_match_tuple)))
-                    update_date = mhlw_match.get(self.update_date_column)
+                    update_date = (
+                        mhlw_match_tuple[update_idx] if update_idx is not None else None
+                    )
                     if pd.notna(update_date) and update_date >= cutoff_date:
                         has_recent = True
                         break
@@ -246,7 +256,7 @@ class ExcelMatcher:
                 if mhlw_matches:
                     mhlw_row = pd.Series(dict(zip(self.mhlw_df.columns, mhlw_matches[0])))
                     matched_rows.append(
-                        self._format_result_row(pharmacy_row, mhlw_row)
+                        self._format_result_row(pharmacy_row_series, mhlw_row)
                     )
 
         result["data"] = matched_rows
