@@ -264,6 +264,7 @@ class ExcelMatcher:
         # Sort by update date desc if available
         if self.update_date_column:
             update_key = f"mhlw_{self.update_date_column}"
+            name_key = f"mhlw_{self.drug_name_column}" if self.drug_name_column else ""
 
             def _parse_date(val: str) -> datetime:
                 try:
@@ -271,9 +272,14 @@ class ExcelMatcher:
                 except Exception:
                     return datetime.min
 
+            def _name_key(val: str) -> str:
+                return normalize_text(str(val)) if val is not None else ""
+
             matched_rows.sort(
-                key=lambda r: _parse_date(r.get(update_key, "")),
-                reverse=True,
+                key=lambda r: (
+                    -_parse_date(r.get(update_key, "")).timestamp(),
+                    _name_key(r.get(name_key, "")),
+                )
             )
 
         result["message"] = f"Matched {len(matched_rows)} drugs with recent updates"
