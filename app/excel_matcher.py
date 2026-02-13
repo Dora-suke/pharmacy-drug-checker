@@ -24,6 +24,28 @@ def normalize_text(text: str) -> str:
     return text.lower().strip()
 
 
+def kana_sort_key(text: str) -> str:
+    """Normalize Japanese text for gojuon-like sorting.
+
+    - NFKC normalize
+    - convert katakana to hiragana
+    - lowercase
+    - remove common whitespace
+    """
+    s = normalize_text(text)
+    out = []
+    for ch in s:
+        code = ord(ch)
+        # Katakana range -> Hiragana
+        if 0x30A1 <= code <= 0x30F6:
+            out.append(chr(code - 0x60))
+        elif ch.isspace():
+            continue
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
 def find_column(df: pd.DataFrame, patterns: List[str]) -> Optional[str]:
     """Find column name matching any of the patterns.
 
@@ -272,13 +294,24 @@ class ExcelMatcher:
                 except Exception:
                     return datetime.min
 
-            def _name_key(val: str) -> str:
-                return normalize_text(str(val)) if val is not None else ""
+            def _row_name_key(row: Dict[str, Any]) -> str:
+                if name_key and name_key in row:
+                    return kana_sort_key(str(row.get(name_key, "")))
+                # Fallback: pick any mhlw_* key containing 品名
+                for k, v in row.items():
+                    if k.startswith("mhlw_") and "品名" in k:
+                        return kana_sort_key(str(v))
+                # Last resort: pharmacy name
+                for k, v in row.items():
+                    if k.startswith("pharmacy_") and "名" in k:
+                        return kana_sort_key(str(v))
+                return ""
 
             matched_rows.sort(
                 key=lambda r: (
                     -_parse_date(r.get(update_key, "")).timestamp(),
-                    _name_key(r.get(name_key, "")),
+                    _row_name_key(r),
+                    normalize_text(str(r.get("pharmacy_コード", r.get("pharmacy_code", "")))),
                 )
             )
 
