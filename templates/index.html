@@ -287,7 +287,26 @@
                 return;
             }
 
-            // Keep server-side order (already sorted by update date desc and name)
+            // Enforce date-desc + name-asc order using server-provided sort key
+            const parseSortDate = (s) => {
+                if (!s) return 0;
+                const m = s.toString().match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+                if (!m) return 0;
+                const y = Number(m[1]);
+                const mo = Number(m[2]);
+                const d = Number(m[3]);
+                if (!y) return 0;
+                return new Date(y, mo - 1, d).getTime();
+            };
+
+            data.sort((a, b) => {
+                const dateA = parseSortDate(a._sort_update_date || '');
+                const dateB = parseSortDate(b._sort_update_date || '');
+                if (dateB !== dateA) return dateB - dateA;
+                const nameA = (a.mhlw_⑥品名 || a.pharmacy_薬品名 || '').toString();
+                const nameB = (b.mhlw_⑥品名 || b.pharmacy_薬品名 || '').toString();
+                return nameA.localeCompare(nameB, 'ja');
+            });
 
             let html = '<div class="table-responsive"><table class="table table-sm table-hover">';
             html += '<thead class="table-light"><tr>';
