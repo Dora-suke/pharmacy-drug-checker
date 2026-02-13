@@ -291,19 +291,7 @@ class ExcelMatcher:
             name_key = f"mhlw_{self.drug_name_column}" if self.drug_name_column else ""
 
             def _parse_date(val: str) -> Optional[datetime]:
-                s = normalize_text(str(val))
-                # Extract YYYY-MM-DD or YYYY/MM/DD from the string
-                m = re.search(r"(\\d{4})[-/](\\d{1,2})[-/](\\d{1,2})", s)
-                if m:
-                    y, mo, d = m.groups()
-                    try:
-                        y_i = int(y)
-                        if y_i < 1:
-                            return None
-                        return datetime(y_i, int(mo), int(d))
-                    except Exception:
-                        return None
-                return None
+                return self._parse_date_safe(val)
 
             def _row_date_key(row: Dict[str, Any]) -> Optional[datetime]:
                 # Prefer normalized sort date if present
@@ -373,22 +361,53 @@ class ExcelMatcher:
         return result
 
     def _extract_update_date_str(self, mhlw_row: pd.Series) -> str:
-        """Extract update date string from MHLW row based on configured column."""
-        if self.update_date_column and self.update_date_column in mhlw_row.index:
-            value = mhlw_row.get(self.update_date_column)
-            if isinstance(value, datetime):
-                return value.strftime("%Y-%m-%d")
-            if pd.notna(value):
-                return str(value)
-        # Fallback: find any column that includes 更新日
+        """Extract latest update date string from MHLW row.
+
+        Prefer the newest date among columns that include "更新" and "日".
+        """
+        dates: List[datetime] = []
+
+        # Collect candidate columns
         for col in mhlw_row.index:
-            if "更新日" in str(col):
+            col_str = str(col)
+            if "更新" in col_str and "日" in col_str:
                 value = mhlw_row.get(col)
                 if isinstance(value, datetime):
-                    return value.strftime("%Y-%m-%d")
-                if pd.notna(value):
-                    return str(value)
-        return ""
+                    dates.append(value)
+                elif pd.notna(value):
+                    d = self._parse_date_safe(str(value))
+                    if d is not None:
+                        dates.append(d)
+
+        # Fallback to configured update_date_column
+        if not dates and self.update_date_column and self.update_date_column in mhlw_row.index:
+            value = mhlw_row.get(self.update_date_column)
+            if isinstance(value, datetime):
+                dates.append(value)
+            elif pd.notna(value):
+                d = self._parse_date_safe(str(value))
+                if d is not None:
+                    dates.append(d)
+
+        if not dates:
+            return ""
+        newest = max(dates)
+        return newest.strftime("%Y-%m-%d")
+
+    def _parse_date_safe(self, val: str) -> Optional[datetime]:
+        """Parse date from string safely."""
+        s = normalize_text(str(val))
+        m = re.search(r"(\\d{4})[-/](\\d{1,2})[-/](\\d{1,2})", s)
+        if m:
+            y, mo, d = m.groups()
+            try:
+                y_i = int(y)
+                if y_i < 1:
+                    return None
+                return datetime(y_i, int(mo), int(d))
+            except Exception:
+                return None
+        return None
 
     def _safe_str(self, value: Any) -> str:
         """Safely convert value to string."""
