@@ -292,7 +292,7 @@ class ExcelMatcher:
             def _parse_date(val: str) -> datetime:
                 s = normalize_text(str(val))
                 # Extract YYYY-MM-DD or YYYY/MM/DD from the string
-                m = re.search(r"(\\d{4})[\\-/](\\d{1,2})[\\-/](\\d{1,2})", s)
+                m = re.search(r"(\\d{4})[-/](\\d{1,2})[-/](\\d{1,2})", s)
                 if m:
                     y, mo, d = m.groups()
                     try:
