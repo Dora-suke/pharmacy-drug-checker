@@ -289,19 +289,22 @@ class ExcelMatcher:
             update_key = f"mhlw_{self.update_date_column}"
             name_key = f"mhlw_{self.drug_name_column}" if self.drug_name_column else ""
 
-            def _parse_date(val: str) -> datetime:
+            def _parse_date(val: str) -> Optional[datetime]:
                 s = normalize_text(str(val))
                 # Extract YYYY-MM-DD or YYYY/MM/DD from the string
                 m = re.search(r"(\\d{4})[-/](\\d{1,2})[-/](\\d{1,2})", s)
                 if m:
                     y, mo, d = m.groups()
                     try:
-                        return datetime(int(y), int(mo), int(d))
+                        y_i = int(y)
+                        if y_i < 1:
+                            return None
+                        return datetime(y_i, int(mo), int(d))
                     except Exception:
-                        return datetime.min
-                return datetime.min
+                        return None
+                return None
 
-            def _row_date_key(row: Dict[str, Any]) -> datetime:
+            def _row_date_key(row: Dict[str, Any]) -> Optional[datetime]:
                 # Prefer explicit update key
                 if update_key in row:
                     return _parse_date(row.get(update_key, ""))
@@ -314,9 +317,9 @@ class ExcelMatcher:
                     s = str(v)
                     if len(s) >= 10 and s[4:5] == "-" and s[7:8] == "-":
                         d = _parse_date(s[:10])
-                        if d != datetime.min:
+                        if d is not None:
                             return d
-                return datetime.min
+                return None
 
             def _row_name_key(row: Dict[str, Any]) -> str:
                 if name_key and name_key in row:
@@ -333,7 +336,7 @@ class ExcelMatcher:
 
             matched_rows.sort(
                 key=lambda r: (
-                    -_row_date_key(r).timestamp(),
+                    -( _row_date_key(r).toordinal() if _row_date_key(r) else 0 ),
                     _row_name_key(r),
                     normalize_text(str(r.get("pharmacy_コード", r.get("pharmacy_code", "")))),
                 )
