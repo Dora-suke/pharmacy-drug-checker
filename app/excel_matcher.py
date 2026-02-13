@@ -278,9 +278,10 @@ class ExcelMatcher:
                 # Convert first match only to avoid duplicates
                 if mhlw_matches:
                     mhlw_row = pd.Series(dict(zip(self.mhlw_df.columns, mhlw_matches[0])))
-                    matched_rows.append(
-                        self._format_result_row(pharmacy_row_series, mhlw_row)
-                    )
+                    formatted = self._format_result_row(pharmacy_row_series, mhlw_row)
+                    # Add normalized update date for stable sorting
+                    formatted["_sort_update_date"] = self._extract_update_date_str(mhlw_row)
+                    matched_rows.append(formatted)
 
         result["data"] = matched_rows
         result["success"] = True
@@ -305,28 +306,24 @@ class ExcelMatcher:
                 return None
 
             def _row_date_key(row: Dict[str, Any]) -> Optional[datetime]:
-                dates = []
+                # Prefer normalized sort date if present
+                if "_sort_update_date" in row and row["_sort_update_date"]:
+                    return _parse_date(row["_sort_update_date"])
 
-                # Prefer explicit update key
+                # Fallback: explicit update key
                 if update_key in row:
                     d = _parse_date(row.get(update_key, ""))
                     if d is not None:
-                        dates.append(d)
+                        return d
 
                 # Fallback: find any mhlw_* key containing 更新日
                 for k, v in row.items():
                     if k.startswith("mhlw_") and "更新日" in k:
                         d = _parse_date(v)
                         if d is not None:
-                            dates.append(d)
+                            return d
 
-                # Last resort: scan all values for date-like strings
-                for v in row.values():
-                    d = _parse_date(v)
-                    if d is not None:
-                        dates.append(d)
-
-                return max(dates) if dates else None
+                return None
 
             def _row_name_key(row: Dict[str, Any]) -> str:
                 if name_key and name_key in row:
@@ -374,6 +371,24 @@ class ExcelMatcher:
                     result[f"mhlw_{col}"] = self._safe_str(value)
 
         return result
+
+    def _extract_update_date_str(self, mhlw_row: pd.Series) -> str:
+        """Extract update date string from MHLW row based on configured column."""
+        if self.update_date_column and self.update_date_column in mhlw_row.index:
+            value = mhlw_row.get(self.update_date_column)
+            if isinstance(value, datetime):
+                return value.strftime("%Y-%m-%d")
+            if pd.notna(value):
+                return str(value)
+        # Fallback: find any column that includes 更新日
+        for col in mhlw_row.index:
+            if "更新日" in str(col):
+                value = mhlw_row.get(col)
+                if isinstance(value, datetime):
+                    return value.strftime("%Y-%m-%d")
+                if pd.notna(value):
+                    return str(value)
+        return ""
 
     def _safe_str(self, value: Any) -> str:
         """Safely convert value to string."""
