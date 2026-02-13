@@ -292,7 +292,27 @@ class ExcelMatcher:
                 try:
                     return datetime.strptime(str(val), "%Y-%m-%d")
                 except Exception:
-                    return datetime.min
+                    try:
+                        return datetime.strptime(str(val), "%Y/%m/%d")
+                    except Exception:
+                        return datetime.min
+
+            def _row_date_key(row: Dict[str, Any]) -> datetime:
+                # Prefer explicit update key
+                if update_key in row:
+                    return _parse_date(row.get(update_key, ""))
+                # Fallback: find any mhlw_* key containing 更新日
+                for k, v in row.items():
+                    if k.startswith("mhlw_") and "更新日" in k:
+                        return _parse_date(v)
+                # Last resort: try any value that looks like a date
+                for v in row.values():
+                    s = str(v)
+                    if len(s) >= 10 and s[4:5] == "-" and s[7:8] == "-":
+                        d = _parse_date(s[:10])
+                        if d != datetime.min:
+                            return d
+                return datetime.min
 
             def _row_name_key(row: Dict[str, Any]) -> str:
                 if name_key and name_key in row:
@@ -309,7 +329,7 @@ class ExcelMatcher:
 
             matched_rows.sort(
                 key=lambda r: (
-                    -_parse_date(r.get(update_key, "")).timestamp(),
+                    -_row_date_key(r).timestamp(),
                     _row_name_key(r),
                     normalize_text(str(r.get("pharmacy_コード", r.get("pharmacy_code", "")))),
                 )
