@@ -697,7 +697,7 @@
             html += '<small><strong>厚生労働省の医薬品供給状況データ</strong>（全 ' + data.total_rows + ' 件）</small>';
             html += '</div>';
             html += '<div class="input-group" style="margin-bottom: 0.5rem;">';
-            html += '<input type="text" class="form-control" id="supply-search" placeholder="医薬品名、成分名、メーカー名などで検索..." oninput="filterSupplyTable()">';
+            html += '<input type="text" class="form-control" id="supply-search" placeholder="医薬品名、成分名、メーカー名などで検索...">';
             html += '<button class="btn btn-primary" type="button" onclick="runSupplySearch()">検索</button>';
             html += '<button class="btn btn-outline-secondary" type="button" onclick="clearSupplySearch()">クリア</button>';
             html += '</div>';
@@ -797,28 +797,8 @@
         }
 
         function filterSupplyTable() {
-            const input = document.getElementById('supply-search');
-            const query = input.value.trim();
-
-            // If search is empty, reload preview normally
-            if (!query) {
-                if (supplySearchMode === 'search') {
-                    supplySearchMode = 'preview';
-                    supplyDataLoaded = false;
-                    previewMHLW();
-                }
-                return;
-            }
-
-            // Debounce search to avoid rapid refresh while typing
-            if (supplySearchTimer) {
-                clearTimeout(supplySearchTimer);
-            }
-            supplySearchTimer = setTimeout(() => {
-                supplySearchMode = 'search';
-                showStatus('🔎 検索中です...（数秒かかる場合があります）', 'info');
-                searchSupplyData(query);
-            }, 400);
+            // No-op: keep for backward compatibility if referenced elsewhere
+            return;
         }
 
         function runSupplySearch() {
@@ -877,7 +857,7 @@
             html += '<small><strong>検索結果</strong>（全 ' + data.total_rows + ' 件）</small>';
             html += '</div>';
             html += '<div class="input-group" style="margin-bottom: 0.5rem;">';
-            html += '<input type="text" class="form-control" id="supply-search" placeholder="医薬品名、成分名、メーカー名などで検索..." oninput="filterSupplyTable()">';
+            html += '<input type="text" class="form-control" id="supply-search" placeholder="医薬品名、成分名、メーカー名などで検索...">';
             html += '<button class="btn btn-primary" type="button" onclick="runSupplySearch()">検索</button>';
             html += '<button class="btn btn-outline-secondary" type="button" onclick="clearSupplySearch()">クリア</button>';
             html += '</div>';
