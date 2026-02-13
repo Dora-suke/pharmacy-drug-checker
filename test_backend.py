@@ -95,6 +95,67 @@ for days in [0, 5, 10, 30]:
     result = matcher.match_and_filter(pharmacy_df, days_back=days)
     print(f"   Days back: {days:2d} → Matched: {result['stats']['recent_updates']} rows")
 
+# Test 6.1: Sort order (update date desc, name gojuon)
+print("\n✅ Test 6.1: 照合結果のソート順確認（更新日降順→医薬品名五十音）")
+test_mhlw_df = pd.DataFrame(
+    [
+        {
+            "⑤YJコード": "AAA",
+            "⑥品名": "カンデサルタン錠2mg",
+            "⑳当該品目の⑫以外の情報を更新した日": "2026-02-05",
+            "⑬当該品目の⑫の情報を更新した日": "",
+        },
+        {
+            "⑤YJコード": "BBB",
+            "⑥品名": "ビマトプロスト点眼液0.03%",
+            "⑳当該品目の⑫以外の情報を更新した日": "",
+            "⑬当該品目の⑫の情報を更新した日": "2026-02-13",
+        },
+        {
+            "⑤YJコード": "CCC",
+            "⑥品名": "ニプラノール点眼液0.25%",
+            "⑳当該品目の⑫以外の情報を更新した日": "2026-02-06",
+            "⑬当該品目の⑫の情報を更新した日": "",
+        },
+        {
+            "⑤YJコード": "DDD",
+            "⑥品名": "アリナミンF100注",
+            "⑳当該品目の⑫以外の情報を更新した日": "2026-02-10",
+            "⑬当該品目の⑫の情報を更新した日": "",
+        },
+        {
+            "⑤YJコード": "EEE",
+            "⑥品名": "アセトアミノフェン錠",
+            "⑳当該品目の⑫以外の情報を更新した日": "2026-02-10",
+            "⑬当該品目の⑫の情報を更新した日": "",
+        },
+    ]
+)
+
+test_pharmacy_df = pd.DataFrame(
+    {
+        "薬品コード": ["AAA", "BBB", "CCC", "DDD", "EEE"],
+        "薬品名": ["カンデサルタン錠2mg", "ビマトプロスト点眼液0.03%", "ニプラノール点眼液0.25%", "アリナミンF100注", "アセトアミノフェン錠"],
+    }
+)
+
+sort_matcher = ExcelMatcher()
+sort_matcher.mhlw_df = test_mhlw_df
+sort_matcher.update_date_column = "⑳当該品目の⑫以外の情報を更新した日"
+sort_matcher.drug_code_column = "⑤YJコード"
+sort_matcher.drug_name_column = "⑥品名"
+
+sort_result = sort_matcher.match_and_filter(test_pharmacy_df, days_back=9999)
+sorted_codes = [row.get("mhlw_⑤YJコード") for row in sort_result["data"]]
+print(f"   Sorted codes: {sorted_codes}")
+print(f"   Sorted dates: {[row.get('_sort_update_date') for row in sort_result['data']]}")
+
+expected_prefix = ["BBB", "DDD", "EEE", "CCC", "AAA"]
+if sorted_codes[:5] == expected_prefix:
+    print("   ✓ ソート順は期待通り（更新日降順→医薬品名五十音）")
+else:
+    print("   ✗ ソート順が期待と異なります")
+
 # Test 7: API endpoint test
 print("\n✅ Test 7: API エンドポイントのテスト")
 from fastapi.testclient import TestClient
