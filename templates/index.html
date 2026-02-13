@@ -817,7 +817,7 @@
             supplySearchTimer = setTimeout(() => {
                 supplySearchMode = 'search';
                 showStatus('🔎 検索中です...（数秒かかる場合があります）', 'info');
-                searchSupplyData(query.toUpperCase());
+                searchSupplyData(query);
             }, 400);
         }
 
@@ -836,7 +836,7 @@
             }
             supplySearchMode = 'search';
             showStatus('🔎 検索中です...（数秒かかる場合があります）', 'info');
-            searchSupplyData(query.toUpperCase());
+            searchSupplyData(query);
         }
 
         function searchSupplyData(searchQuery) {

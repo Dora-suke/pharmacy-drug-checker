@@ -408,12 +408,12 @@ async def preview_supply(request: Request, limit: int = 20, offset: int = 0, sea
 
         # Apply search filter if provided
         if search:
-            search_lower = search.lower()
+            search_norm = normalize_text(search)
             filtered_records = []
             for record in all_records:
                 # Search across all columns
                 for value in record.values():
-                    if search_lower in str(value).lower():
+                    if search_norm in normalize_text(str(value)):
                         filtered_records.append(record)
                         break
             all_records = filtered_records
