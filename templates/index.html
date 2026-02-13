@@ -287,34 +287,7 @@
                 return;
             }
 
-            // Sort data: by date (newest first), then by drug name (alphabetically)
-            data.sort((a, b) => {
-                // Find date column dynamically
-                let dateA = '';
-                let dateB = '';
-                for (const key in a) {
-                    if (key.includes('更新') && key.includes('日')) {
-                        dateA = a[key] || '';
-                        break;
-                    }
-                }
-                for (const key in b) {
-                    if (key.includes('更新') && key.includes('日')) {
-                        dateB = b[key] || '';
-                        break;
-                    }
-                }
-
-                // Sort by date (newest first)
-                if (dateB !== dateA) {
-                    return dateB.localeCompare(dateA);
-                }
-
-                // If same date, sort by drug name (alphabetically)
-                const nameA = (a.pharmacy_薬品名 || '').toString();
-                const nameB = (b.pharmacy_薬品名 || '').toString();
-                return nameA.localeCompare(nameB, 'ja');
-            });
+            // Keep server-side order (already sorted by update date desc and name)
 
             let html = '<div class="table-responsive"><table class="table table-sm table-hover">';
             html += '<thead class="table-light"><tr>';
