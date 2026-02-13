@@ -305,21 +305,28 @@ class ExcelMatcher:
                 return None
 
             def _row_date_key(row: Dict[str, Any]) -> Optional[datetime]:
+                dates = []
+
                 # Prefer explicit update key
                 if update_key in row:
-                    return _parse_date(row.get(update_key, ""))
+                    d = _parse_date(row.get(update_key, ""))
+                    if d is not None:
+                        dates.append(d)
+
                 # Fallback: find any mhlw_* key containing 更新日
                 for k, v in row.items():
                     if k.startswith("mhlw_") and "更新日" in k:
-                        return _parse_date(v)
-                # Last resort: try any value that looks like a date
-                for v in row.values():
-                    s = str(v)
-                    if len(s) >= 10 and s[4:5] == "-" and s[7:8] == "-":
-                        d = _parse_date(s[:10])
+                        d = _parse_date(v)
                         if d is not None:
-                            return d
-                return None
+                            dates.append(d)
+
+                # Last resort: scan all values for date-like strings
+                for v in row.values():
+                    d = _parse_date(v)
+                    if d is not None:
+                        dates.append(d)
+
+                return max(dates) if dates else None
 
             def _row_name_key(row: Dict[str, Any]) -> str:
                 if name_key and name_key in row:
