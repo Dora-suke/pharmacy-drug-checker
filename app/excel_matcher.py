@@ -2,6 +2,7 @@
 
 import unicodedata
 from datetime import datetime, timedelta
+import re
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 import pandas as pd
@@ -289,13 +290,16 @@ class ExcelMatcher:
             name_key = f"mhlw_{self.drug_name_column}" if self.drug_name_column else ""
 
             def _parse_date(val: str) -> datetime:
-                try:
-                    return datetime.strptime(str(val), "%Y-%m-%d")
-                except Exception:
+                s = normalize_text(str(val))
+                # Extract YYYY-MM-DD or YYYY/MM/DD from the string
+                m = re.search(r"(\\d{4})[\\-/](\\d{1,2})[\\-/](\\d{1,2})", s)
+                if m:
+                    y, mo, d = m.groups()
                     try:
-                        return datetime.strptime(str(val), "%Y/%m/%d")
+                        return datetime(int(y), int(mo), int(d))
                     except Exception:
                         return datetime.min
+                return datetime.min
 
             def _row_date_key(row: Dict[str, Any]) -> datetime:
                 # Prefer explicit update key
