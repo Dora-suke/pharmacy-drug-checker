@@ -261,6 +261,21 @@ class ExcelMatcher:
 
         result["data"] = matched_rows
         result["success"] = True
+        # Sort by update date desc if available
+        if self.update_date_column:
+            update_key = f"mhlw_{self.update_date_column}"
+
+            def _parse_date(val: str) -> datetime:
+                try:
+                    return datetime.strptime(str(val), "%Y-%m-%d")
+                except Exception:
+                    return datetime.min
+
+            matched_rows.sort(
+                key=lambda r: _parse_date(r.get(update_key, "")),
+                reverse=True,
+            )
+
         result["message"] = f"Matched {len(matched_rows)} drugs with recent updates"
 
         return result
