@@ -303,8 +303,8 @@
                 const dateA = parseSortDate(a._sort_update_date || '');
                 const dateB = parseSortDate(b._sort_update_date || '');
                 if (dateB !== dateA) return dateB - dateA;
-                const nameA = (a.mhlw_⑥品名 || a.pharmacy_薬品名 || '').toString();
-                const nameB = (b.mhlw_⑥品名 || b.pharmacy_薬品名 || '').toString();
+                const nameA = (a['mhlw_⑥品名'] || a['pharmacy_薬品名'] || '').toString();
+                const nameB = (b['mhlw_⑥品名'] || b['pharmacy_薬品名'] || '').toString();
                 return nameA.localeCompare(nameB, 'ja');
             });
 
